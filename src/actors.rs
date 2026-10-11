@@ -183,57 +183,89 @@ fn skin_box(y0: f32, y1: f32, bot: (f32, f32), top: (f32, f32), m: &Mat) -> Mesh
 }
 
 pub fn heroine() -> Body {
-    let skin = Mat::col([0.86, 0.66, 0.52]);
-    let top = Mat::col([0.14, 0.32, 0.42]);
-    let pants = Mat::col([0.2, 0.22, 0.3]);
-    let belt = Mat::col([0.25, 0.15, 0.08]);
-    let boot = Mat::col([0.12, 0.09, 0.07]);
-    let glove = Mat::col([0.12, 0.1, 0.09]);
-    let hair = Mat::tex(T_HAIR, [1.0, 1.0, 1.0]);
+    // Agente d'unité spéciale : béret, gilet tactique, rangers. Couleurs sourdes.
+    let skin = Mat::col([0.80, 0.62, 0.50]);
+    let shirt = Mat::tex(T_FABRIC, [0.30, 0.36, 0.42]);
+    let pants = Mat::tex(T_FABRIC, [0.19, 0.21, 0.26]);
+    let vest = Mat::tex(T_VEST, [1.0, 1.0, 1.0]);
+    let pad = Mat::tex(T_FABRIC, [0.17, 0.17, 0.15]);
+    let beret = Mat::tex(T_FABRIC, [0.13, 0.18, 0.30]);
+    let belt = Mat::col([0.10, 0.08, 0.07]);
+    let leather = Mat::col([0.16, 0.10, 0.06]);
+    let boot = Mat::col([0.08, 0.07, 0.06]);
+    let sole = Mat::col([0.04, 0.04, 0.04]);
+    let glove = Mat::col([0.07, 0.07, 0.07]);
+    let hair = Mat::tex(T_HAIR, [0.75, 0.75, 0.75]);
     let face = Mat::tex(T_FACE, [1.0, 1.0, 1.0]);
     let metal = Mat::col([0.18, 0.18, 0.2]);
+    let brass = Mat::col([0.62, 0.50, 0.20]);
 
-    let mut pelvis = skin_box(-0.13, 0.05, (0.3, 0.2), (0.27, 0.18), &pants);
-    pelvis.taper(0.0, 0.07, (0.29, 0.19), (0.28, 0.19), (0.0, 0.0), &belt, None);
+    // Bassin : pantalon, ceinturon à poches.
+    let mut pelvis = Mesh::new();
+    pelvis.prism(-0.14, 0.06, (0.30, 0.21), (0.28, 0.19), (0.0, 0.0), 8, &pants, true);
+    pelvis.prism(-0.01, 0.06, (0.31, 0.22), (0.30, 0.21), (0.0, 0.0), 8, &belt, false);
+    pelvis.block(v3(-0.03, -0.005, 0.1), v3(0.03, 0.055, 0.115), &brass);
+    for x in [-0.15, 0.15] {
+        pelvis.block(v3(x - 0.035, -0.06, -0.06), v3(x + 0.035, 0.05, 0.04), &leather);
+    }
+    pelvis.block(v3(-0.06, -0.05, -0.13), v3(0.06, 0.05, -0.09), &leather);
 
+    // Torse : chemise, gilet tactique, col, cou.
     let mut torso = Mesh::new();
-    torso.taper(0.0, 0.5, (0.25, 0.16), (0.36, 0.19), (0.0, 0.0), &top, None);
-    let mut chest = Mesh::new();
-    chest.taper(0.24, 0.4, (0.27, 0.08), (0.28, 0.07), (0.07, 0.08), &top, None);
-    torso.append(&chest, &Mat4::IDENTITY);
-    // Épaules nues + cou.
-    torso.taper(0.5, 0.58, (0.08, 0.08), (0.07, 0.07), (0.0, 0.0), &skin, None);
-    // Bretelle du holster d'épaule.
-    let strap = Mat::col([0.22, 0.13, 0.06]);
-    torso.taper(0.12, 0.5, (0.04, 0.2), (0.04, 0.21), (0.0, 0.0), &strap, None);
+    torso.prism(0.0, 0.52, (0.25, 0.17), (0.34, 0.2), (0.0, 0.0), 8, &shirt, false);
+    torso.prism(0.05, 0.46, (0.28, 0.2), (0.36, 0.235), (0.0, 0.015), 8, &vest, true);
+    for x in [-0.115, 0.115] {
+        torso.block(v3(x - 0.035, 0.44, -0.105), v3(x + 0.035, 0.505, 0.12), &pad);
+    }
+    torso.prism(0.47, 0.54, (0.13, 0.115), (0.12, 0.105), (0.0, 0.0), 8, &shirt, false);
+    torso.prism(0.5, 0.6, (0.085, 0.085), (0.08, 0.08), (0.0, 0.0), 6, &skin, false);
 
+    // Tête : visage, carré court, béret incliné.
     let mut head = Mesh::new();
-    head.taper(0.0, 0.25, (0.16, 0.19), (0.19, 0.21), (0.01, 0.0), &skin, Some(&face));
-    head.taper(0.17, 0.29, (0.21, 0.22), (0.19, 0.2), (-0.01, -0.01), &hair, None);
-    head.taper(0.03, 0.27, (0.2, 0.05), (0.21, 0.06), (-0.1, -0.1), &hair, None);
-    let ponytail = skin_box(-0.32, 0.0, (0.05, 0.04), (0.08, 0.07), &hair);
+    head.prism(0.0, 0.25, (0.115, 0.145), (0.165, 0.19), (0.008, 0.0), 8, &face, true);
+    head.taper(-0.01, 0.25, (0.18, 0.1), (0.19, 0.11), (-0.06, -0.055), &hair, None);
+    for x in [-0.088, 0.088] {
+        head.block(v3(x - 0.014, -0.01, -0.075), v3(x + 0.014, 0.25, 0.05), &hair);
+    }
+    let mut cap = Mesh::new();
+    cap.prism(0.0, 0.04, (0.2, 0.215), (0.27, 0.27), (0.0, -0.01), 10, &beret, false);
+    cap.prism(0.04, 0.075, (0.27, 0.27), (0.17, 0.17), (-0.01, -0.02), 10, &beret, true);
+    head.append(&cap, &(Mat4::translate(v3(0.0, 0.225, -0.005)) * Mat4::rot_z(-0.28) * Mat4::rot_x(-0.1)));
 
-    let mut upper_arm = skin_box(-0.28, 0.0, (0.075, 0.075), (0.1, 0.1), &skin);
-    upper_arm.taper(-0.06, 0.02, (0.11, 0.11), (0.11, 0.11), (0.0, 0.0), &top, None);
-    let mut forearm = skin_box(-0.25, 0.0, (0.065, 0.065), (0.075, 0.075), &skin);
-    forearm.taper(-0.34, -0.24, (0.06, 0.04), (0.075, 0.06), (0.0, 0.0), &glove, None);
+    // Bras : manche, épaulette, avant-bras nu, gant mitaine.
+    let mut upper_arm = Mesh::new();
+    upper_arm.prism(-0.28, 0.02, (0.08, 0.08), (0.105, 0.105), (0.0, 0.0), 8, &shirt, false);
+    upper_arm.prism(-0.1, 0.035, (0.135, 0.135), (0.12, 0.12), (0.0, 0.0), 8, &pad, true);
+    let mut forearm = Mesh::new();
+    forearm.prism(-0.06, 0.015, (0.09, 0.09), (0.095, 0.095), (0.0, 0.0), 8, &shirt, true);
+    forearm.prism(-0.25, -0.04, (0.06, 0.06), (0.078, 0.078), (0.0, 0.0), 6, &skin, false);
+    forearm.prism(-0.335, -0.23, (0.07, 0.045), (0.072, 0.07), (0.0, 0.0), 6, &glove, true);
+    forearm.prism(-0.375, -0.33, (0.055, 0.03), (0.066, 0.04), (0.0, 0.0), 6, &skin, true);
 
-    let thigh = skin_box(-0.43, 0.0, (0.11, 0.12), (0.155, 0.16), &pants);
-    let mut shin = skin_box(-0.38, 0.0, (0.09, 0.1), (0.11, 0.12), &pants);
-    shin.taper(-0.47, -0.3, (0.11, 0.13), (0.11, 0.12), (0.01, 0.0), &boot, None);
-    let mut toe = Mesh::new();
-    toe.block(v3(-0.05, -0.47, 0.0), v3(0.05, -0.4, 0.13), &boot);
-    shin.append(&toe, &Mat4::IDENTITY);
+    // Jambes : treillis, genouillères, rangers.
+    let mut thigh = Mesh::new();
+    thigh.prism(-0.43, 0.0, (0.11, 0.12), (0.16, 0.17), (0.0, 0.0), 8, &pants, false);
+    let mut shin = Mesh::new();
+    shin.prism(-0.32, 0.0, (0.095, 0.105), (0.115, 0.125), (0.0, 0.0), 8, &pants, true);
+    shin.block(v3(-0.045, -0.09, 0.045), v3(0.045, 0.04, 0.08), &pad);
+    shin.prism(-0.47, -0.27, (0.11, 0.13), (0.115, 0.125), (0.005, 0.0), 8, &boot, false);
+    shin.prism(-0.3, -0.255, (0.125, 0.135), (0.125, 0.135), (0.0, 0.0), 8, &leather, true);
+    shin.block(v3(-0.05, -0.47, 0.02), v3(0.05, -0.4, 0.15), &boot);
+    shin.block(v3(-0.058, -0.485, -0.07), v3(0.058, -0.465, 0.158), &sole);
 
     // Pistolet tenu dans la main (repère de l'avant-bras : -y = canon).
     let mut gun = Mesh::new();
     gun.block(v3(-0.018, -0.5, 0.0), v3(0.018, -0.28, 0.055), &metal);
     gun.block(v3(-0.016, -0.34, -0.09), v3(0.016, -0.28, 0.01), &Mat::col([0.1, 0.1, 0.1]));
+    // Holster de cuisse (jambe droite) et ses sangles.
     let mut holster = Mesh::new();
-    holster.block(v3(0.07, -0.25, -0.05), v3(0.11, -0.04, 0.05), &belt);
-    holster.block(v3(0.075, -0.06, -0.06), v3(0.105, 0.03, -0.02), &metal);
+    holster.block(v3(0.075, -0.27, -0.05), v3(0.115, -0.04, 0.05), &belt);
+    holster.block(v3(0.08, -0.06, -0.06), v3(0.11, 0.03, -0.02), &metal);
+    for y in [-0.11, -0.22] {
+        holster.prism(y - 0.013, y + 0.013, (0.15, 0.16), (0.155, 0.165), (0.0, 0.0), 8, &belt, false);
+    }
 
-    Body { pelvis, torso, head, ponytail: Some(ponytail), upper_arm, forearm, thigh, shin, gun, holster, scale: 1.0 }
+    Body { pelvis, torso, head, ponytail: None, upper_arm, forearm, thigh, shin, gun, holster, scale: 1.0 }
 }
 
 pub fn zombie(variant: u32) -> Body {

@@ -32,6 +32,8 @@ pub const T_GLINT: i16 = 25;
 pub const T_LANDSCAPE: i16 = 26;
 pub const T_PAPER_BLUE: i16 = 27;
 pub const T_KEY: i16 = 28;
+pub const T_FABRIC: i16 = 29;
+pub const T_VEST: i16 = 30;
 
 type C = [f32; 3];
 
@@ -292,29 +294,58 @@ pub fn build() -> Vec<Texture> {
         sc([0.42, 0.42, 0.45], 0.8 + 0.3 * n)
     }));
 
-    // T_FACE : visage de l'héroïne (16x16).
-    v.push(gen(16, 16, |x, y| {
-        let skin: C = [0.86, 0.66, 0.52];
-        let hair: C = [0.22, 0.12, 0.07];
-        if y < 4 || (y < 7 && (x < 2 || x > 13)) {
-            return hair;
+    // T_FACE : tête de l'héroïne enroulée sur 8 pans (32x22, u = 0,5 au milieu du visage) :
+    // visage au centre, frange, yeux enfoncés, traits sobres ; joues et nuque sur les côtés.
+    // Les 6 dernières lignes forment le menton.
+    v.push(gen(32, 22, |x, y| {
+        let skin: C = [0.80, 0.62, 0.50];
+        let hair: C = [0.16, 0.10, 0.07];
+        let n = hash2(x as i32, y as i32, 32);
+        // Arrière et côtés : cheveux (carré court jusqu'à la mâchoire).
+        if !(8..24).contains(&x) {
+            return sc(hair, 0.8 + 0.5 * n);
         }
-        if y == 6 && (3..=6).contains(&x) || y == 6 && (9..=12).contains(&x) {
-            return sc(hair, 1.2); // sourcils
+        if y >= 16 {
+            let edge = (x as f32 - 15.5).abs() / 16.0;
+            return sc(skin, (1.0 - 0.04 * (y - 16) as f32 - 0.35 * edge * edge) * (0.96 + 0.06 * n));
         }
-        if y == 8 && (x == 4 || x == 5 || x == 10 || x == 11) {
-            return if x == 5 || x == 10 { [0.15, 0.25, 0.35] } else { [0.95, 0.95, 0.95] };
+        let x = x - 8;
+        // Frange en mèches irrégulières, cheveux sur les tempes.
+        let fringe = 3 + (hash2(x as i32, 0, 33) * 2.5) as usize;
+        if y < fringe || (x < 2 && y < 12) || (x > 13 && y < 12) {
+            return sc(hair, 0.8 + 0.5 * n);
         }
-        if (y == 10 || y == 11) && (x == 7 || x == 8) {
-            return sc(skin, 0.8); // nez
+        // Ombre des arcades et sourcils fins.
+        if y == 6 && ((4..=6).contains(&x) || (9..=11).contains(&x)) {
+            return mix(hair, skin, 0.35);
         }
+        if y == 7 && (x == 3 || x == 12) {
+            return sc(skin, 0.75);
+        }
+        if y == 8 && ((4..=5).contains(&x) || (10..=11).contains(&x)) {
+            return if x == 5 || x == 10 { [0.12, 0.16, 0.18] } else { [0.78, 0.74, 0.70] };
+        }
+        if y == 8 && (x == 3 || x == 6 || x == 9 || x == 12) {
+            return sc(skin, 0.75);
+        }
+        // Arête du nez éclairée, narines dans l'ombre.
+        if (8..=10).contains(&y) && x == 7 {
+            return sc(skin, 1.08);
+        }
+        if y == 11 && (7..=8).contains(&x) {
+            return sc(skin, 0.7);
+        }
+        // Bouche fine.
         if y == 13 && (6..=9).contains(&x) {
-            return [0.65, 0.25, 0.25];
+            return if x == 6 || x == 9 { sc(skin, 0.8) } else { [0.68, 0.36, 0.36] };
         }
-        if x < 2 || x > 13 {
-            return sc(skin, 0.85);
+        if y == 14 && (7..=8).contains(&x) {
+            return sc(skin, 0.86);
         }
-        skin
+        // Pommettes et contour du visage ombrés.
+        let edge = (x as f32 - 7.5).abs() / 7.5;
+        let jaw = if y >= 15 { 0.85 } else { 1.0 };
+        sc(skin, (1.04 - 0.3 * edge * edge) * jaw * (0.96 + 0.06 * n))
     }));
 
     // T_ZFACE : visage de zombie.
@@ -472,6 +503,67 @@ pub fn build() -> Vec<Texture> {
     v.push(gen(8, 8, |x, y| {
         let n = hash2(x as i32, y as i32, 31);
         sc([0.9, 0.72, 0.3], 0.7 + 0.5 * n)
+    }));
+
+    // T_FABRIC : toile neutre (teintée par le matériau), trame et coutures.
+    v.push(gen(16, 16, |x, y| {
+        let weave = if (x + y) % 2 == 0 { 1.04 } else { 0.94 };
+        let n = fbm(x as f32 / 4.0, y as f32 / 4.0, 2, 34);
+        let seam = if x == 0 { 0.7 } else { 1.0 };
+        let v = weave * (0.78 + 0.32 * n) * seam;
+        [v, v, v]
+    }));
+
+    // T_VEST : gilet tactique enroulé autour du torse (u = 0,5 à l'avant).
+    v.push(gen(64, 32, |x, y| {
+        let n = hash2(x as i32, y as i32, 35);
+        let cloth: C = sc([0.17, 0.17, 0.15], 0.85 + 0.25 * n);
+        let pouch: C = [0.24, 0.23, 0.17];
+        let strap: C = [0.09, 0.08, 0.07];
+        let (xi, yi) = (x as i32, y as i32);
+        // Fermeture éclair au centre avant.
+        if (31..=32).contains(&xi) {
+            return if y % 2 == 0 { [0.42, 0.42, 0.40] } else { strap };
+        }
+        // Porte-cartouches et poches de poitrine.
+        for c in [22, 41] {
+            let dx = xi - c;
+            if (-5..=5).contains(&dx) && (8..=21).contains(&yi) {
+                if yi == 8 || yi == 9 {
+                    return sc(pouch, 1.25); // rabat
+                }
+                if yi == 10 || dx.abs() == 5 || yi == 21 {
+                    return sc(pouch, 0.55);
+                }
+                if yi == 9 + 1 && dx == 0 {
+                    return [0.05, 0.05, 0.05];
+                }
+                return sc(pouch, 0.9 + 0.2 * n);
+            }
+        }
+        // Sangles horizontales sur les flancs.
+        if (yi == 24 || yi == 25) && !(26..=37).contains(&xi) {
+            return strap;
+        }
+        // Écusson dans le dos : bouclier sombre, bordure or, barre rouge.
+        let bx = ((xi + 32) % 64) - 32;
+        if (-5..=5).contains(&bx) && (5..=15).contains(&yi) {
+            let half = 5 - (yi - 11).max(0);
+            if bx.abs() <= half {
+                if bx.abs() == half || yi == 5 {
+                    return [0.62, 0.50, 0.20];
+                }
+                if (9..=10).contains(&yi) {
+                    return [0.55, 0.10, 0.08];
+                }
+                return [0.10, 0.12, 0.20];
+            }
+        }
+        // Surpiqûres en bordure.
+        if y == 0 || y == 31 {
+            return sc(cloth, 0.6);
+        }
+        cloth
     }));
 
     v

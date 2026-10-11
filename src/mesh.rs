@@ -216,6 +216,57 @@ impl Mesh {
         side(b[0], b[1], b[2], b[3], m, full);
     }
 
+    /// Prisme effilé à `n` pans aux normales lissées (membres, torse), de y0 à y1.
+    /// `bot`/`top` : largeur et profondeur des sections, `zoff` : décalage avant.
+    /// La texture fait le tour : u = 0,5 à l'avant (+z), 0 / 1 à l'arrière ; v = 0 en haut.
+    #[allow(clippy::too_many_arguments)]
+    pub fn prism(&mut self, y0: f32, y1: f32, bot: (f32, f32), top: (f32, f32), zoff: (f32, f32), n: usize, m: &Mat, caps: bool) {
+        let ring = |y: f32, s: (f32, f32), z: f32, k: usize| {
+            let a = (k as f32 / n as f32 - 0.5) * std::f32::consts::TAU;
+            let (sa, ca) = a.sin_cos();
+            let p = v3(sa * s.0 * 0.5, y, ca * s.1 * 0.5 + z);
+            // Normale d'ellipse, légèrement inclinée par l'effilement.
+            let slope = (bot.0 + bot.1 - top.0 - top.1) * 0.25 / (y1 - y0).abs().max(1e-3);
+            let nn = v3(sa / s.0.max(1e-3), slope.clamp(-1.5, 1.5) / (s.0 + s.1).max(1e-3), ca / s.1.max(1e-3)).norm();
+            (p, nn)
+        };
+        for k in 0..n {
+            let (u0, u1) = (k as f32 / n as f32, (k + 1) as f32 / n as f32);
+            let (b0, nb0) = ring(y0, bot, zoff.0, k);
+            let (b1, nb1) = ring(y0, bot, zoff.0, k + 1);
+            let (t0, nt0) = ring(y1, top, zoff.1, k);
+            let (t1, nt1) = ring(y1, top, zoff.1, k + 1);
+            self.smooth_quad([b0, b1, t1, t0], [nb0, nb1, nt1, nt0], [[u0, 1.0], [u1, 1.0], [u1, 0.0], [u0, 0.0]], m);
+        }
+        if caps {
+            for (y, s, z, up) in [(y0, bot, zoff.0, -1.0), (y1, top, zoff.1, 1.0)] {
+                let c = v3(0.0, y, z);
+                for k in 0..n {
+                    let (p0, _) = ring(y, s, z, k);
+                    let (p1, _) = ring(y, s, z, k + 1);
+                    self.tri([c, p0, p1], [[0.5, 0.5], [0.0, 0.0], [1.0, 0.0]], m, v3(0.0, up, 0.0));
+                }
+            }
+        }
+    }
+
+    /// Quad à normales par sommet, orienté selon la moyenne des normales.
+    fn smooth_quad(&mut self, p: [Vec3; 4], n: [Vec3; 4], uv: [[f32; 2]; 4], m: &Mat) {
+        let want = n[0] + n[1] + n[2] + n[3];
+        let face = (p[2] - p[0]).cross(p[1] - p[0]);
+        let order = if face.dot(want) < 0.0 { [0, 3, 2, 1] } else { [0, 1, 2, 3] };
+        let i: Vec<u32> = order
+            .iter()
+            .map(|&k| {
+                self.v.push(MV { p: p[k], n: n[k], uv: uv[k], c: m.c, glow: m.glow });
+                (self.v.len() - 1) as u32
+            })
+            .collect();
+        let t = |a, b, c| MT { i: [a, b, c], tex: m.tex, blend: m.blend, two_sided: m.two_sided };
+        self.t.push(t(i[0], i[1], i[2]));
+        self.t.push(t(i[0], i[2], i[3]));
+    }
+
     pub fn append(&mut self, o: &Mesh, xf: &Mat4) {
         let base = self.v.len() as u32;
         for v in &o.v {

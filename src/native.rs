@@ -349,6 +349,54 @@ fn screenshots(dir: &str) {
     println!("rendu : {:.2} ms/image", t0.elapsed().as_secs_f64() * 1000.0 / n as f64);
 }
 
+/// Planche du modèle de l'héroïne (développement) : `--model <dossier>`.
+fn model_sheet(dir: &str) {
+    use psx_resident::actors::{self, Pose};
+    use psx_resident::math::Vec3;
+    use psx_resident::raster::{Camera, Fog, Light, Lighting, Raster};
+    std::fs::create_dir_all(dir).unwrap();
+    let mut r = Raster::new(psx_resident::textures::build());
+    let hero = actors::heroine();
+    let zombie = actors::zombie(0);
+    let light = Lighting {
+        ambient: [0.3, 0.27, 0.26],
+        lights: vec![Light { pos: v3(1.2, 2.4, 1.8), color: [1.3, 1.0, 0.7], radius: 6.0 }],
+        sun: None,
+    };
+    let views: &[(&str, f32, f32, Pose)] = &[
+        ("front", 0.0, 2.2, Pose::idle(0.0)),
+        ("three_quarter", 0.7, 2.0, Pose::idle(0.0)),
+        ("side", 1.57, 2.0, Pose::walk(0.8, 0.0)),
+        ("back", 3.14, 2.0, Pose::idle(0.0)),
+        ("aim", 0.9, 2.0, Pose::aim(0.0, 0.0)),
+        ("run", 2.2, 2.0, Pose::walk(1.3, 1.0)),
+        ("face", 0.25, 0.9, Pose::idle(0.0)),
+        ("face_front", 0.0, 0.7, Pose::idle(0.0)),
+        ("face_side", 1.2, 0.7, Pose::idle(0.0)),
+        ("face_low", -0.5, 0.7, Pose::idle(2.0)),
+    ];
+    for (name, ang, dist, pose) in views {
+        r.clear(0x101014);
+        let target = if name.starts_with("face") { v3(0.0, 1.62, 0.0) } else { v3(0.0, 0.95, 0.0) };
+        r.cam = Camera::look_at(target + v3(ang.sin() * dist, 0.15, ang.cos() * dist), target, 60.0);
+        r.fog = Fog { start: 20.0, end: 40.0, color: [0.0; 3] };
+        actors::draw_body(&mut r, &hero, pose, Vec3::ZERO, 0.0, &light);
+        if *name == "front" {
+            actors::draw_body(&mut r, &zombie, &Pose::shamble(0.0, 0.0), v3(1.1, 0.0, -0.6), 0.0, &light);
+        }
+        write_ppm(&format!("{dir}/{name}.ppm"), &r.fb);
+    }
+    // Tête à distance de jeu, tout autour.
+    for k in 0..8 {
+        let ang = k as f32 * std::f32::consts::FRAC_PI_4;
+        r.clear(0x101014);
+        let target = v3(0.0, 1.5, 0.0);
+        r.cam = Camera::look_at(target + v3(ang.sin() * 3.0, 1.0, ang.cos() * 3.0), target, 60.0);
+        actors::draw_body(&mut r, &hero, &Pose::idle(0.0), Vec3::ZERO, 0.0, &light);
+        write_ppm(&format!("{dir}/ring{k}.ppm"), &r.fb);
+    }
+}
+
 pub fn run() {
     let args: Vec<String> = std::env::args().collect();
     if let Some(i) = args.iter().position(|a| a == "--shot") {
@@ -358,6 +406,11 @@ pub fn run() {
         g.debug_setup(f(1) as usize, v3(f(2), 0.0, f(3)), 0.0, false);
         g.frame(1.0 / 60.0, &Input::default());
         write_ppm(&args[i + 4], &g.raster.fb);
+        return;
+    }
+    if let Some(i) = args.iter().position(|a| a == "--model") {
+        // --model <dossier> : héroïne en gros plan sous plusieurs angles.
+        model_sheet(&args[i + 1]);
         return;
     }
     if let Some(i) = args.iter().position(|a| a == "--door") {

@@ -86,6 +86,7 @@ cargo test --release                       # tests de gameplay (portes, clé, ti
 cargo run --release -- --shots captures/   # captures d'écran (pièces, menus clavier/manette) + temps de rendu
 cargo run --release -- --visibility        # vérifie le cadrage : joueuse, portes et objets visibles, aucun trou
 cargo run --release -- --shot 2 7.5 3 x.ppm  # capture : pièce, x, z de la joueuse
+cargo run --release -- --model modele/      # planche du modèle de l'héroïne (face, dos, visée, course, visage)
 ```
 
 | Fichier          | Rôle |
