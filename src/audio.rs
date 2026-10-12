@@ -34,9 +34,21 @@ pub enum Sfx {
     Drone,
     Death,
     Locked,
+    Shotgun,
+    Pump,
+    Slash,
+    Roar,
+    Snarl,
+    Yelp,
+    Thud,
+    Glass,
+    Splash,
+    MusicBox,
+    BossLoop,
+    Brute,
 }
 
-const COUNT: usize = Sfx::Locked as usize + 1;
+const COUNT: usize = Sfx::Brute as usize + 1;
 
 pub struct Bank {
     sounds: Vec<Vec<f32>>,
@@ -450,6 +462,232 @@ fn death(rng: &mut Rng) -> Vec<f32> {
     v
 }
 
+fn shotgun(rng: &mut Rng) -> Vec<f32> {
+    let n = len(0.9);
+    let mut v = vec![0.0; n];
+    let mut lp = Lp(0.0);
+    let mut lp2 = Lp(0.0);
+    for (i, s) in v.iter_mut().enumerate() {
+        let t = i as f32 / RATE;
+        let noise = rng.range(-1.0, 1.0);
+        let crack = noise * (-t * 35.0).exp() * 1.3;
+        let body = lp.run(noise, 0.18) * (-t * 8.0).exp() * 2.2;
+        let thump = (TAU * (70.0 - t * 50.0) * t).sin() * (-t * 10.0).exp() * 1.8;
+        let tail = lp2.run(noise, 0.03) * (-t * 3.5).exp() * 1.2;
+        *s = crack + body + thump + tail;
+    }
+    echo(&mut v, 0.13, 0.3, 0.5);
+    normalize(&mut v, 0.98);
+    v
+}
+
+/// Pompe du fusil : deux claquements métalliques.
+fn pump(rng: &mut Rng) -> Vec<f32> {
+    let mut v = vec![0.0; len(0.5)];
+    for (off, f) in [(0.0, 1300.0), (0.03, 2600.0), (0.22, 1100.0), (0.25, 3100.0)] {
+        let c = click(rng, f, 0.07);
+        let o = len(off);
+        for (i, s) in c.iter().enumerate() {
+            v[o + i] += s;
+        }
+    }
+    normalize(&mut v, 0.65);
+    v
+}
+
+/// Lame qui fend l'air.
+fn slash(rng: &mut Rng) -> Vec<f32> {
+    let dur = 0.22;
+    let mut svf = Svf::new();
+    let mut v: Vec<f32> = (0..len(dur))
+        .map(|i| {
+            let t = i as f32 / RATE;
+            let x = t / dur;
+            let env = (x * 6.0).min(1.0) * (1.0 - x).powf(2.0);
+            svf.band(rng.range(-1.0, 1.0), 1800.0 + 3500.0 * x, 0.35) * env
+        })
+        .collect();
+    normalize(&mut v, 0.5);
+    v
+}
+
+/// Rugissement grave et rauque (boss) : plusieurs voix désaccordées et grondement.
+fn roar(rng: &mut Rng, base: f32, dur: f32) -> Vec<f32> {
+    let mut phs = [0.0f32; 3];
+    let mut f1 = Svf::new();
+    let mut f2 = Svf::new();
+    let mut lp = Lp(0.0);
+    let mut v: Vec<f32> = (0..len(dur))
+        .map(|i| {
+            let t = i as f32 / RATE;
+            let x = t / dur;
+            let bend = 1.0 + 0.35 * (x * 2.5).min(1.0) - 0.45 * x;
+            let mut src = 0.0;
+            for (k, ph) in phs.iter_mut().enumerate() {
+                let f = base * bend * (1.0 + k as f32 * 0.013) * (1.0 + 0.06 * (t * (23.0 + k as f32 * 7.0)).sin());
+                *ph = (*ph + f / RATE) % 1.0;
+                src += *ph * 2.0 - 1.0;
+            }
+            src += rng.range(-1.0, 1.0) * 0.9;
+            let env = (x * 8.0).min(1.0) * (1.0 - x).powf(0.6);
+            let formant = 380.0 + 260.0 * (x * 3.0).min(1.0);
+            let rumble = lp.run(rng.range(-1.0, 1.0), 0.02) * 3.0;
+            (f1.band(src, formant, 0.3) + f2.band(src, formant * 2.6, 0.4) * 0.5 + rumble) * env
+        })
+        .collect();
+    echo(&mut v, 0.19, 0.35, 0.8);
+    normalize(&mut v, 0.95);
+    v
+}
+
+/// Aboiement hargneux tout proche (pas de filtrage de distance).
+fn snarl(rng: &mut Rng) -> Vec<f32> {
+    let dur = 0.55;
+    let mut ph = 0.0f32;
+    let mut svf = Svf::new();
+    let mut svf2 = Svf::new();
+    let mut v: Vec<f32> = (0..len(dur))
+        .map(|i| {
+            let t = i as f32 / RATE;
+            let x = t / dur;
+            let growl = x < 0.55;
+            let f = if growl { 110.0 + 20.0 * (t * 37.0).sin() } else { 520.0 * (1.3 - 0.6 * (x - 0.55) / 0.45) };
+            ph = (ph + f / RATE) % 1.0;
+            let src = ph * 2.0 - 1.0 + rng.range(-0.6, 0.6);
+            let env = if growl { (x * 12.0).min(1.0) * 0.7 } else { (1.0 - (x - 0.55) / 0.45).powf(1.3) * 1.3 };
+            (svf.band(src, if growl { 600.0 } else { 1000.0 }, 0.3) + svf2.band(src, 2300.0, 0.5) * 0.4) * env
+        })
+        .collect();
+    normalize(&mut v, 0.8);
+    v
+}
+
+fn yelp(rng: &mut Rng) -> Vec<f32> {
+    let dur = 0.4;
+    let mut ph = 0.0f32;
+    let mut svf = Svf::new();
+    let mut v: Vec<f32> = (0..len(dur))
+        .map(|i| {
+            let t = i as f32 / RATE;
+            let x = t / dur;
+            let f = 900.0 * (1.2 - 0.6 * x);
+            ph = (ph + f / RATE) % 1.0;
+            let src = (ph * TAU).sin() + 0.4 * (ph * 2.0 - 1.0) + rng.range(-0.1, 0.1);
+            svf.band(src, 1400.0, 0.4) * (x * 30.0).min(1.0) * (1.0 - x).powf(1.5)
+        })
+        .collect();
+    normalize(&mut v, 0.6);
+    v
+}
+
+/// Pas très lourd / impact sourd.
+fn thud(rng: &mut Rng) -> Vec<f32> {
+    let mut lp = Lp(0.0);
+    let mut v: Vec<f32> = (0..len(0.7))
+        .map(|i| {
+            let t = i as f32 / RATE;
+            let a = (TAU * (42.0 - t * 20.0) * t).sin() * (-t * 6.0).exp() * 1.5;
+            let b = lp.run(rng.range(-1.0, 1.0), 0.05) * (-t * 12.0).exp() * 2.5;
+            a + b
+        })
+        .collect();
+    echo(&mut v, 0.15, 0.25, 0.3);
+    normalize(&mut v, 0.9);
+    v
+}
+
+/// Verre brisé : tintements aigus aléatoires.
+fn glass(rng: &mut Rng) -> Vec<f32> {
+    let mut v = vec![0.0; len(1.4)];
+    let mut lp = Lp(0.0);
+    for (i, s) in v.iter_mut().enumerate().take(len(0.15)) {
+        let t = i as f32 / RATE;
+        *s += (rng.range(-1.0, 1.0) - lp.run(rng.range(-1.0, 1.0), 0.1)) * (-t * 20.0).exp() * 1.5;
+    }
+    for _ in 0..40 {
+        let o = len(rng.range(0.0, 0.9));
+        let f = rng.range(2500.0, 7000.0);
+        let a = rng.range(0.1, 0.4);
+        for i in 0..len(0.25) {
+            let t = i as f32 / RATE;
+            if o + i < v.len() {
+                v[o + i] += (TAU * f * t).sin() * (-t * 25.0).exp() * a;
+            }
+        }
+    }
+    normalize(&mut v, 0.75);
+    v
+}
+
+fn splash(rng: &mut Rng) -> Vec<f32> {
+    let mut svf = Svf::new();
+    let mut v: Vec<f32> = (0..len(0.3))
+        .map(|i| {
+            let t = i as f32 / RATE;
+            let bub = (TAU * (300.0 + 900.0 * t) * t).sin() * (-t * 30.0).exp() * 0.4;
+            svf.band(rng.range(-1.0, 1.0), 900.0 - 1200.0 * t, 0.5) * (-t * 14.0).exp() + bub
+        })
+        .collect();
+    normalize(&mut v, 0.45);
+    v
+}
+
+/// Boîte à musique : mélodie en mineur, timbre de lamelles métalliques.
+fn music_box() -> Vec<f32> {
+    // (début, demi-tons au-dessus de la4)
+    let melody: [(f32, i32); 14] = [
+        (0.0, 7), (0.4, 10), (0.8, 14), (1.2, 12), (1.6, 10), (2.0, 7), (2.6, 5),
+        (3.0, 7), (3.4, 10), (3.8, 9), (4.2, 5), (4.6, 2), (5.0, 3), (5.6, -2),
+    ];
+    let mut v = vec![0.0; len(7.0)];
+    for (start, semi) in melody {
+        let f = 880.0 * 2f32.powf(semi as f32 / 12.0);
+        let o = len(start);
+        for i in 0..len(1.2) {
+            let t = i as f32 / RATE;
+            let s = ((TAU * f * t).sin() + 0.25 * (TAU * f * 4.02 * t).sin() * (-t * 9.0).exp()) * (-t * 3.5).exp();
+            if o + i < v.len() {
+                v[o + i] += s;
+            }
+        }
+    }
+    echo(&mut v, 0.23, 0.25, 0.4);
+    normalize(&mut v, 0.45);
+    v
+}
+
+/// Boucle de combat (8 s) : tambours graves, pulsation et cordes dissonantes.
+fn boss_loop(rng: &mut Rng) -> Vec<f32> {
+    let n = len(8.0);
+    let mut v = vec![0.0f32; n];
+    let beat = 0.5;
+    let mut lp = Lp(0.0);
+    for k in 0..16 {
+        let accent = matches!(k % 8, 0 | 3 | 6);
+        let o = len(k as f32 * beat);
+        let a = if accent { 1.0 } else { 0.45 };
+        for i in 0..len(0.45) {
+            let t = i as f32 / RATE;
+            let s = (TAU * (60.0 - 25.0 * t) * t).sin() * (-t * 9.0).exp() + lp.run(rng.range(-1.0, 1.0), 0.06) * (-t * 18.0).exp();
+            if o + i < n {
+                v[o + i] += s * a;
+            }
+        }
+    }
+    // Cordes : quinte diminuée qui glisse lentement, boucle exacte sur 8 s.
+    for (i, s) in v.iter_mut().enumerate() {
+        let t = i as f32 / RATE;
+        let x = t / 8.0;
+        let sw = 0.5 + 0.5 * (x * TAU).sin();
+        let a = (TAU * 73.5 * t).sin() + (TAU * 104.0 * t).sin() * 0.7;
+        let b = ((TAU * 147.0 * t).sin() + (TAU * 208.0 * t).sin()) * 0.25 * sw;
+        *s += (a * 0.35 + b) * 0.5;
+    }
+    crossfade_loop(&mut v, len(0.05));
+    normalize(&mut v, 0.6);
+    v
+}
+
 fn crossfade_loop(v: &mut Vec<f32>, fade: usize) {
     let n = v.len();
     if n <= fade * 2 {
@@ -499,6 +737,18 @@ impl Bank {
             normalize(&mut v, 0.6);
             v
         });
+        set(Sfx::Shotgun, shotgun(&mut rng));
+        set(Sfx::Pump, pump(&mut rng));
+        set(Sfx::Slash, slash(&mut rng));
+        set(Sfx::Roar, roar(&mut rng, 48.0, 2.6));
+        set(Sfx::Snarl, snarl(&mut rng));
+        set(Sfx::Yelp, yelp(&mut rng));
+        set(Sfx::Thud, thud(&mut rng));
+        set(Sfx::Glass, glass(&mut rng));
+        set(Sfx::Splash, splash(&mut rng));
+        set(Sfx::MusicBox, music_box());
+        set(Sfx::BossLoop, boss_loop(&mut rng));
+        set(Sfx::Brute, roar(&mut rng, 75.0, 1.6));
         Bank { sounds }
     }
 }

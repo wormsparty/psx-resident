@@ -34,6 +34,15 @@ pub const T_PAPER_BLUE: i16 = 27;
 pub const T_KEY: i16 = 28;
 pub const T_FABRIC: i16 = 29;
 pub const T_VEST: i16 = 30;
+pub const T_FUR: i16 = 31;
+pub const T_FLESH: i16 = 32;
+pub const T_GIRL: i16 = 33;
+pub const T_HOUND_PORTRAIT: i16 = 34;
+pub const T_TILE: i16 = 35;
+pub const T_OLDFACE: i16 = 36;
+pub const T_HERB: i16 = 37;
+pub const T_SHELLS: i16 = 38;
+pub const T_BRUTEFACE: i16 = 39;
 
 type C = [f32; 3];
 
@@ -564,6 +573,180 @@ pub fn build() -> Vec<Texture> {
             return sc(cloth, 0.6);
         }
         cloth
+    }));
+
+    // T_FUR : pelage sombre et pelé des chiens.
+    v.push(gen(16, 32, |x, y| {
+        let n = fbm(x as f32 / 2.0, y as f32 / 5.0, 3, 40);
+        let streak = hash2(x as i32, (y / 3) as i32, 41);
+        let mut c = sc([0.20, 0.16, 0.12], 0.55 + 0.6 * n * (0.8 + 0.4 * streak));
+        // Plaies à vif.
+        if fbm(x as f32 / 4.0, y as f32 / 4.0, 2, 42) > 0.68 {
+            c = [0.42, 0.10, 0.08];
+        }
+        c
+    }));
+
+    // T_FLESH : chair à vif, veines et suintements.
+    v.push(gen(32, 32, |x, y| {
+        let n = fbm(x as f32 / 5.0, y as f32 / 5.0, 4, 43);
+        let vein = ((x as f32 * 0.35 + n * 9.0).sin() * (y as f32 * 0.21 + n * 5.0).cos()).abs();
+        let mut c = mix([0.42, 0.20, 0.18], [0.62, 0.38, 0.33], n);
+        if vein < 0.08 {
+            c = [0.22, 0.05, 0.10];
+        }
+        if hash2(x as i32, y as i32, 44) > 0.96 {
+            c = [0.75, 0.68, 0.40];
+        }
+        c
+    }));
+
+    // T_GIRL : portrait d'une fillette en robe blanche (32x48).
+    v.push(gen(32, 48, |x, y| {
+        if x < 3 || x > 28 || y < 3 || y > 44 {
+            return sc([0.6, 0.45, 0.15], if x == 1 || y == 1 { 1.3 } else { 0.9 });
+        }
+        let n = fbm(x as f32 / 6.0, y as f32 / 6.0, 3, 45);
+        let mut c: C = sc([0.10, 0.12, 0.10], 0.7 + 0.6 * n);
+        let fx = (x as f32 - 15.5) / 5.0;
+        let fy = (y as f32 - 18.0) / 6.0;
+        // Longs cheveux blonds.
+        if (x as f32 - 15.5).abs() < 8.0 && y > 9 && y < 30 && fx * fx + ((y as f32 - 17.0) / 9.0).powi(2) < 2.4 {
+            c = sc([0.65, 0.52, 0.25], 0.75 + 0.4 * n);
+        }
+        if fx * fx + fy * fy < 1.0 {
+            c = sc([0.85, 0.74, 0.66], 0.85 + 0.15 * n);
+            if y == 17 && (x == 13 || x == 18) {
+                c = [0.15, 0.25, 0.45];
+            }
+            if y == 22 && (15..=16).contains(&x) {
+                c = [0.6, 0.25, 0.25];
+            }
+        }
+        let sy = y as f32 - 31.0;
+        if sy > 0.0 && (x as f32 - 15.5).abs() < 3.0 + sy * 1.2 {
+            c = sc([0.82, 0.80, 0.75], 0.8 + 0.3 * n);
+        }
+        c
+    }));
+
+    // T_HOUND_PORTRAIT : portrait d'un grand chien noir (32x48).
+    v.push(gen(32, 48, |x, y| {
+        if x < 3 || x > 28 || y < 3 || y > 44 {
+            return sc([0.6, 0.45, 0.15], if x == 1 || y == 1 { 1.3 } else { 0.9 });
+        }
+        let n = fbm(x as f32 / 6.0, y as f32 / 6.0, 3, 46);
+        let mut c: C = sc([0.16, 0.10, 0.06], 0.7 + 0.6 * n);
+        let (fx, fy) = (x as f32 - 15.5, y as f32 - 20.0);
+        // Tête, museau, oreilles.
+        let head = (fx / 6.0).powi(2) + (fy / 7.0).powi(2) < 1.0;
+        let snout = fx.abs() < 3.0 && (fy > 2.0 && fy < 9.0);
+        let ear = (fx.abs() - 5.0).abs() < 2.0 && fy > -10.0 && fy < -3.0;
+        if head || snout || ear {
+            c = sc([0.07, 0.06, 0.06], 0.8 + 0.5 * n);
+            if fy == -1.0 && (fx.abs() - 3.0).abs() < 0.6 {
+                c = [0.9, 0.7, 0.15];
+            }
+            if fy > 7.0 && fy < 9.0 && fx.abs() < 1.5 {
+                c = [0.02, 0.02, 0.02];
+            }
+        }
+        if y > 30 && fx.abs() < 2.0 + (y - 30) as f32 * 1.4 {
+            c = sc([0.07, 0.06, 0.06], 0.8 + 0.5 * n);
+            // Collier clouté.
+            if y == 32 || y == 33 {
+                c = if x % 3 == 0 { [0.8, 0.7, 0.4] } else { [0.4, 0.08, 0.06] };
+            }
+        }
+        c
+    }));
+
+    // T_TILE : carrelage de cuisine noir et blanc, joints sales.
+    v.push(gen(32, 32, |x, y| {
+        let tile = ((x / 8) + (y / 8)) % 2 == 0;
+        let n = fbm(x as f32 / 6.0, y as f32 / 6.0, 3, 47);
+        let mut c: C = if tile { [0.70, 0.68, 0.62] } else { [0.16, 0.16, 0.17] };
+        c = sc(c, 0.75 + 0.3 * n);
+        if x % 8 == 0 || y % 8 == 0 {
+            c = [0.12, 0.11, 0.09];
+        }
+        if fbm(x as f32 / 9.0, y as f32 / 9.0, 2, 48) > 0.7 {
+            c = mix(c, [0.30, 0.03, 0.03], 0.7);
+        }
+        c
+    }));
+
+    // T_OLDFACE : visage d'un vieux majordome (16x16) : cheveux gris, favoris.
+    v.push(gen(16, 16, |x, y| {
+        let n = hash2(x as i32, y as i32, 49);
+        let skin: C = sc([0.74, 0.62, 0.55], 0.88 + 0.15 * n);
+        let grey: C = sc([0.62, 0.62, 0.60], 0.8 + 0.3 * n);
+        if y < 3 || ((x < 3 || x > 12) && y < 11) {
+            return grey;
+        }
+        if y == 6 && ((4..=6).contains(&x) || (9..=11).contains(&x)) {
+            return grey;
+        }
+        if y == 8 && (x == 5 || x == 10) {
+            return [0.1, 0.1, 0.12];
+        }
+        if (8..=10).contains(&y) && (7..=8).contains(&x) {
+            return sc(skin, 0.85);
+        }
+        if y == 12 && (5..=10).contains(&x) {
+            return grey;
+        }
+        if y == 13 && (6..=9).contains(&x) {
+            return [0.45, 0.25, 0.25];
+        }
+        skin
+    }));
+
+    // T_HERB : feuilles d'herbe médicinale dans un pot.
+    v.push(gen(16, 16, |x, y| {
+        if y > 10 {
+            return sc([0.45, 0.22, 0.12], 0.8 + 0.3 * hash2(x as i32, y as i32, 50));
+        }
+        let leaf = ((x as f32 - 7.5).abs() + (y as f32 - 5.0).abs() * 0.6) < 7.0 && hash2(x as i32, y as i32, 51) > 0.2;
+        if leaf {
+            sc([0.15, 0.55, 0.15], 0.6 + 0.6 * hash2(x as i32 / 2, y as i32, 52))
+        } else {
+            [0.05, 0.12, 0.04]
+        }
+    }));
+
+    // T_SHELLS : boîte de cartouches rouge.
+    v.push(gen(16, 16, |x, y| {
+        if y > 4 && y < 11 && x > 1 && x < 14 {
+            if x % 3 == 0 {
+                [0.12, 0.1, 0.08]
+            } else if y < 7 {
+                [0.85, 0.7, 0.3]
+            } else {
+                [0.65, 0.08, 0.06]
+            }
+        } else {
+            sc([0.45, 0.12, 0.08], 0.85 + 0.2 * hash2(x as i32, y as i32, 53))
+        }
+    }));
+
+    // T_BRUTEFACE : visage du Sujet 7 : crâne chauve, points de suture, bouche sans lèvres.
+    v.push(gen(16, 16, |x, y| {
+        let n = hash2(x as i32, y as i32, 54);
+        let skin: C = sc([0.55, 0.50, 0.52], 0.85 + 0.2 * n);
+        if x == 8 && y < 7 && y % 2 == 0 {
+            return [0.15, 0.05, 0.05];
+        }
+        if y == 7 && ((3..=6).contains(&x) || (9..=12).contains(&x)) {
+            return sc(skin, 0.5);
+        }
+        if y == 8 && ((4..=5).contains(&x) || (10..=11).contains(&x)) {
+            return [0.9, 0.85, 0.75];
+        }
+        if (12..=13).contains(&y) && (4..=11).contains(&x) {
+            return if (x + y) % 2 == 0 { [0.85, 0.8, 0.6] } else { [0.25, 0.04, 0.04] };
+        }
+        skin
     }));
 
     v

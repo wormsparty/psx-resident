@@ -7,18 +7,88 @@ use crate::raster::{Fog, Light};
 use crate::textures::*;
 use std::f32::consts::{FRAC_PI_2, PI};
 
+mod below;
+mod outside;
+mod upstairs;
+
+pub use below::{EDGAR_POS, PIT};
+
 pub const KEY_EMBLEM: u8 = 0;
+pub const KEY_LAB: u8 = 1;
+pub const KEY_CRYPT: u8 = 2;
+pub const KEY_FRONT: u8 = 3;
+
+pub const LOCK_LIBRARY: usize = 0;
+pub const LOCK_LAB: usize = 1;
+pub const LOCK_CRYPT: usize = 2;
+pub const LOCK_FRONT: usize = 3;
+pub const NLOCKS: usize = 4;
 
 pub const ROOM_HALL: usize = 0;
 pub const ROOM_DINING: usize = 1;
 pub const ROOM_CORRIDOR: usize = 2;
 pub const ROOM_STUDY: usize = 3;
 pub const ROOM_LIBRARY: usize = 4;
+pub const ROOM_KITCHEN: usize = 5;
+pub const ROOM_GALLERY: usize = 6;
+pub const ROOM_BEDROOM: usize = 7;
+pub const ROOM_NURSERY: usize = 8;
+pub const ROOM_LAB: usize = 9;
+pub const ROOM_CRYPT_STAIRS: usize = 10;
+pub const ROOM_CRYPT: usize = 11;
+pub const ROOM_PORCH: usize = 12;
+pub const ROOM_MARSH: usize = 13;
+/// Ennemi pas encore entré en scène.
+pub const NOWHERE: usize = usize::MAX;
+
+// Drapeaux d'histoire.
+pub const F_PORTRAITS: usize = 0;
+pub const F_EDGAR_MET: usize = 1;
+/// Clé de la crypte prise : le Sujet 7 brise sa cuve, Edgar se relève.
+pub const F_CRYPT_KEY: usize = 2;
+pub const F_BRUTE_DEAD: usize = 3;
+pub const F_BOSS_INTRO: usize = 4;
+pub const F_BOSS_DEAD: usize = 5;
+pub const F_HOUND_INTRO: usize = 6;
+pub const F_HOUND_DEAD: usize = 7;
+pub const F_PORCH_SEEN: usize = 8;
+pub const NFLAGS: usize = 12;
+
+pub fn key_name(k: u8) -> &'static str {
+    match k {
+        KEY_EMBLEM => "CLÉ AU BLASON",
+        KEY_LAB => "CLÉ AU CORBEAU",
+        KEY_CRYPT => "CLÉ DE LA CRYPTE",
+        _ => "CLÉ DU MANOIR",
+    }
+}
+
+pub fn key_desc(k: u8) -> &'static str {
+    match k {
+        KEY_EMBLEM => "Une lourde clé ornée d'un blason.",
+        KEY_LAB => "Une clé noire dont l'anneau figure un corbeau aux ailes déployées.",
+        KEY_CRYPT => "Une clé de fer rouillée, froide comme la pierre. Une tête de mort orne l'anneau.",
+        _ => "La grande clé de la porte d'entrée, encore poisseuse de sang. La liberté.",
+    }
+}
+
+/// Message quand on tente une porte verrouillée sans la clé.
+pub fn lock_msg(k: u8) -> &'static str {
+    match k {
+        KEY_EMBLEM => "La porte est verrouillée. Un blason est gravé sur la serrure.",
+        KEY_LAB => "La porte est verrouillée. Un corbeau est gravé sur la serrure.",
+        KEY_CRYPT => "Une lourde porte cloutée, verrouillée. Une tête de mort est gravée sur la serrure. Un courant d'air glacé passe dessous.",
+        _ => "La porte d'entrée s'est verrouillée derrière vous. Il faut la grande clé du manoir.",
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ItemKind {
     Ammo(u32),
+    Shells(u32),
+    Shotgun,
     Medkit,
+    Herb,
     Key(u8),
 }
 
@@ -26,8 +96,11 @@ impl ItemKind {
     pub fn name(&self) -> String {
         match self {
             ItemKind::Ammo(n) => format!("MUNITIONS 9MM ({n})"),
+            ItemKind::Shells(n) => format!("CARTOUCHES ({n})"),
+            ItemKind::Shotgun => "FUSIL À POMPE".to_string(),
             ItemKind::Medkit => "TROUSSE DE SOINS".to_string(),
-            ItemKind::Key(_) => "CLÉ AU BLASON".to_string(),
+            ItemKind::Herb => "HERBE MÉDICINALE".to_string(),
+            ItemKind::Key(k) => key_name(*k).to_string(),
         }
     }
 }
@@ -37,14 +110,49 @@ pub struct ItemSpawn {
     pub room: usize,
     pub pos: Vec3,
     pub kind: ItemKind,
+    /// N'apparaît qu'une fois ce drapeau levé.
+    pub flag: Option<usize>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum EnemyKind {
+    Zombie,
+    Dog,
+    /// Le Sujet 7 (boss intermédiaire du laboratoire).
+    Brute,
+    /// L'Abomination (le Docteur), boss de la crypte.
+    Boss,
+    /// Le Molosse du marais.
+    Hound,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SpawnState {
+    Idle,
+    /// Penché sur un cadavre.
+    Eating,
+    /// Allongé au sol, se relève à l'approche.
+    Lying,
 }
 
 #[derive(Clone, Debug)]
-pub struct ZombieSpawn {
+pub struct EnemySpawn {
     pub room: usize,
     pub pos: Vec3,
     pub yaw: f32,
-    pub eating: bool,
+    pub kind: EnemyKind,
+    pub state: SpawnState,
+    /// Apparence : 0-2 zombies ordinaires, 3 Edgar zombifié.
+    pub look: u32,
+    /// Absent jusqu'à ce que ce drapeau soit levé.
+    pub wake: Option<usize>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DoorAnim {
+    Door,
+    Stairs { up: bool },
+    Gate,
 }
 
 #[derive(Clone, Debug)]
@@ -58,6 +166,18 @@ pub struct Door {
     pub to_yaw: f32,
     /// Identifiant de serrure et clé requise.
     pub lock: Option<(usize, u8)>,
+    pub anim: DoorAnim,
+}
+
+impl Door {
+    fn stairs(mut self, up: bool) -> Door {
+        self.anim = DoorAnim::Stairs { up };
+        self
+    }
+    fn gate(mut self) -> Door {
+        self.anim = DoorAnim::Gate;
+        self
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -65,7 +185,15 @@ pub enum InteractKind {
     Message(&'static str),
     Typewriter,
     Window,
-    Note,
+    /// Document de plusieurs pages.
+    Note(&'static [&'static str]),
+    /// Portrait de la galerie (énigme).
+    Portrait(u8),
+    /// Edgar, le majordome.
+    Npc,
+    MusicBox,
+    /// La barque du ponton : fin du jeu.
+    Boat,
 }
 
 #[derive(Clone, Debug)]
@@ -98,6 +226,13 @@ pub struct RoomLight {
     pub flicker: f32,
 }
 
+/// Décor affiché selon un drapeau (cuve brisée, portrait pivoté...).
+pub struct CondMesh {
+    pub flag: usize,
+    pub when: bool,
+    pub mesh: Mesh,
+}
+
 pub struct Room {
     pub name: &'static str,
     pub mesh: Mesh,
@@ -116,12 +251,29 @@ pub struct Room {
     pub flames: Vec<(Vec3, f32)>,
     pub corpses: Vec<(Vec3, f32)>,
     pub fog: Fog,
+    /// Hauteur du plancher au-dessus du sol extérieur (vue par les fenêtres).
+    pub level: f32,
+    /// Pièce en plein air : terrain, ciel et façade du manoir.
+    pub outdoor: bool,
+    pub cond: Vec<CondMesh>,
 }
 
 pub struct World {
     pub rooms: Vec<Room>,
     pub items: Vec<ItemSpawn>,
-    pub zombies: Vec<ZombieSpawn>,
+    pub enemies: Vec<EnemySpawn>,
+}
+
+fn item(room: usize, pos: Vec3, kind: ItemKind) -> ItemSpawn {
+    ItemSpawn { room, pos, kind, flag: None }
+}
+
+fn enemy(room: usize, x: f32, z: f32, yaw: f32, kind: EnemyKind) -> EnemySpawn {
+    EnemySpawn { room, pos: v3(x, 0.0, z), yaw, kind, state: SpawnState::Idle, look: 0, wake: None }
+}
+
+fn zombie(room: usize, x: f32, z: f32, yaw: f32) -> EnemySpawn {
+    enemy(room, x, z, yaw, EnemyKind::Zombie)
 }
 
 // ------------------------------------------------------------------ construction
@@ -139,6 +291,8 @@ enum OpenKind {
     Door,
     DoubleDoor,
     Window,
+    /// Passage ouvert sur un escalier (`true` : il monte).
+    Arch(bool),
 }
 
 #[derive(Clone, Copy)]
@@ -381,6 +535,46 @@ impl Builder {
                 let center = (a + b) * 0.5 + n * 0.5;
                 self.interacts.push(Interact { pos: center, radius: 1.1, kind: InteractKind::Window });
             }
+            OpenKind::Arch(rising) => {
+                let yt = p.top;
+                let stone = Mat::tex(T_STONE, [0.55, 0.53, 0.5]);
+                let at = a + up * yt;
+                let bt = b + up * yt;
+                // Linteau et piédroits sur toute l'épaisseur.
+                self.mesh.quad([at, bt, bt + out, at + out], [[0.0; 2]; 4], &stone, -up);
+                self.mesh.quad([a, at, at + out, a + out], [[0.0; 2]; 4], &stone, ax);
+                self.mesh.quad([b, bt, bt + out, b + out], [[0.0; 2]; 4], &stone, -ax);
+                // Cage d'escalier qui s'enfonce dans l'obscurité.
+                let w = p.to - p.from;
+                let steps = 7;
+                let (rise, run) = (if rising { 0.3 } else { -0.3 }, 0.38);
+                let back = -n;
+                let o0 = a + out;
+                for k in 0..steps {
+                    let y0 = k as f32 * rise;
+                    let y1 = (k + 1) as f32 * rise;
+                    let z0 = k as f32 * run;
+                    let z1 = (k + 1) as f32 * run;
+                    let lo = o0 + back * if rising { z0 } else { z1 };
+                    let tread_y = if rising { y1 } else { y0 };
+                    let lit = 1.0 - k as f32 / steps as f32 * 0.8;
+                    let m = Mat::tex(T_STONE, [0.5 * lit, 0.48 * lit, 0.45 * lit]);
+                    // Contremarche puis marche.
+                    self.mesh.quad([lo + up * y0, lo + ax * w + up * y0, lo + ax * w + up * y1, lo + up * y1], [[0.0, 0.0], [1.0, 0.0], [1.0, 0.3], [0.0, 0.3]], &m, n);
+                    let t0 = o0 + back * z0 + up * tread_y;
+                    let t1 = o0 + back * z1 + up * tread_y;
+                    self.mesh.quad([t0, t0 + ax * w, t1 + ax * w, t1], [[0.0, 0.0], [1.0, 0.0], [1.0, 0.4], [0.0, 0.4]], &m, up);
+                }
+                let depth = run * steps as f32;
+                let (yb, ytop) = if rising { (0.0, yt + rise * steps as f32) } else { (rise * steps as f32 - 0.2, yt) };
+                for (side, nn) in [(o0, ax), (o0 + ax * w, -ax)] {
+                    self.mesh.quad([side + up * yb, side + back * depth + up * yb, side + back * depth + up * ytop, side + up * ytop], [[0.0, 0.0], [2.0, 0.0], [2.0, 1.5], [0.0, 1.5]], &Mat::tex(T_STONE, [0.35, 0.33, 0.32]), nn);
+                }
+                let black = Mat::col([0.0, 0.0, 0.0]);
+                let e = o0 + back * depth;
+                self.mesh.quad([e + up * yb, e + ax * w + up * yb, e + ax * w + up * ytop, e + up * ytop], [[0.0; 2]; 4], &black, n);
+                self.mesh.quad([o0 + up * ytop, o0 + ax * w + up * ytop, e + ax * w + up * ytop, e + up * ytop], [[0.0; 2]; 4], &black, -up);
+            }
             OpenKind::Door | OpenKind::DoubleDoor => {
                 let yt = p.top;
                 let rec = -n * 0.1;
@@ -527,6 +721,9 @@ impl Builder {
             flames: self.flames,
             corpses,
             fog: Fog { start: 9.0, end: 30.0, color: [0.0, 0.0, 0.0] },
+            level: 0.0,
+            outdoor: false,
+            cond: Vec::new(),
         }
     }
 }
@@ -536,7 +733,7 @@ fn cam(min: (f32, f32), max: (f32, f32), eye: Vec3, target: Vec3, fov: f32) -> C
 }
 
 fn door(pos: Vec3, normal: Vec3, to_room: usize, to_pos: Vec3, to_yaw: f32, lock: Option<(usize, u8)>) -> Door {
-    Door { pos, normal, to_room, to_pos, to_yaw, lock }
+    Door { pos, normal, to_room, to_pos, to_yaw, lock, anim: DoorAnim::Door }
 }
 
 const BIG: f32 = 1000.0;
@@ -629,7 +826,6 @@ fn hall() -> Room {
     // Clair de lune.
     b.moon_spill(v3(-3.7, 2.6, 0.8), 7.0);
     b.moon_spill(v3(3.7, 2.6, 0.8), 7.0);
-    b.msg(0.0, 0.5, 1.2, "La porte d'entrée est bloquée de l'extérieur. Impossible de sortir.");
 
     let cameras = vec![
         // Entrée : plan sur la porte d'entrée et la lune par la fenêtre.
@@ -640,7 +836,8 @@ fn hall() -> Room {
     let doors = vec![
         door(v3(-6.0, 0.0, 6.2), v3(1.0, 0.0, 0.0), ROOM_DINING, v3(-6.9, 0.0, 6.2), -FRAC_PI_2, None),
         door(v3(6.0, 0.0, 6.2), v3(-1.0, 0.0, 0.0), ROOM_CORRIDOR, v3(6.8, 0.0, 6.2), FRAC_PI_2, None),
-        door(v3(0.0, 0.0, 14.0), v3(0.0, 0.0, -1.0), ROOM_LIBRARY, v3(0.0, 0.0, 14.9), 0.0, Some((0, KEY_EMBLEM))),
+        door(v3(0.0, 0.0, 14.0), v3(0.0, 0.0, -1.0), ROOM_LIBRARY, v3(0.0, 0.0, 14.9), 0.0, Some((LOCK_LIBRARY, KEY_EMBLEM))),
+        door(v3(0.0, 0.0, 0.0), v3(0.0, 0.0, 1.0), ROOM_PORCH, v3(0.0, 0.0, -1.0), PI, Some((LOCK_FRONT, KEY_FRONT))),
     ];
     b.build("HALL", cameras, doors, [0.05, 0.05, 0.07], vec![])
 }
@@ -659,6 +856,7 @@ fn dining() -> Room {
         &style,
         &[
             op(Side::E, 3.5, 4.9, 0.0, 2.6, OpenKind::Door),
+            op(Side::N, 1.6, 3.0, 0.0, 2.6, OpenKind::Door),
             op(Side::W, 1.5, 3.5, 1.0, 3.3, OpenKind::Window),
             op(Side::W, 6.5, 8.5, 1.0, 3.3, OpenKind::Window),
             op(Side::S, 2.5, 4.5, 1.0, 3.3, OpenKind::Window),
@@ -728,7 +926,10 @@ fn dining() -> Room {
         cam((-BIG, -BIG), (-11.0, 7.0), v3(-7.0, 3.2, 10.8), v3(-16.0, 0.6, 3.5), 64.0),
         cam((-BIG, 7.0), (-11.0, BIG), v3(-7.0, 3.2, 3.0), v3(-15.5, 0.8, 10.5), 64.0),
     ];
-    let doors = vec![door(v3(-6.0, 0.0, 6.2), v3(-1.0, 0.0, 0.0), ROOM_HALL, v3(-5.1, 0.0, 6.2), FRAC_PI_2, None)];
+    let doors = vec![
+        door(v3(-6.0, 0.0, 6.2), v3(-1.0, 0.0, 0.0), ROOM_HALL, v3(-5.1, 0.0, 6.2), FRAC_PI_2, None),
+        door(v3(-15.7, 0.0, 12.0), v3(0.0, 0.0, -1.0), ROOM_KITCHEN, v3(-15.7, 0.0, 12.9), 0.0, None),
+    ];
     let corpses = vec![(v3(-16.3, 0.0, 3.0), 1.2)];
     let mut r = b.build("SALLE À MANGER", cameras, doors, [0.04, 0.04, 0.06], corpses);
     r.fog = Fog { start: 8.0, end: 24.0, color: [0.0; 3] };
@@ -834,6 +1035,7 @@ fn study() -> Room {
     b.painting(v3(11.5, 1.9, 20.0), v3(0.0, 0.0, 1.0), 1.4, 0.95, T_LANDSCAPE);
     b.msg(11.5, 20.6, 0.8, "Un paysage du marais au clair de lune. Le manoir y est peint... sans fenêtres.");
     b.msg(6.9, 23.5, 0.9, "Des traités d'anatomie, de botanique... et de nécromancie.");
+    b.interacts.push(Interact { pos: v3(11.1, 0.0, 24.1), radius: 0.7, kind: InteractKind::Note(NOTE_STUDY) });
     b.moon_spill(v3(13.5, 2.0, 23.0), 4.0);
     b.moon_spill(v3(10.5, 2.0, 26.5), 4.0);
     b.sconce(v3(9.4, 2.0, 20.05), v3(0.0, 0.0, 1.0), 3.5);
@@ -881,7 +1083,28 @@ fn library() -> Room {
         b.flames.push((p + v3(0.0, 0.08, 0.0), 0.045));
     }
     b.light(v3(0.0, 3.3, 19.8), [0.85, 0.6, 0.35], 9.0, 0.08);
-    b.bookshelf(5.45, 14.6, 6.0, 25.4, 3.2, [true, false, false, false]);
+    b.bookshelf(5.45, 14.6, 6.0, 20.8, 3.2, [true, false, false, false]);
+    // Escalier vers l'étage, le long du mur est.
+    let wood = Mat::tex(T_WOOD, [0.5, 0.36, 0.28]);
+    let rail = Mat::tex(T_WOOD, [0.35, 0.24, 0.18]);
+    let steps = 11;
+    let (z0, run, rise) = (21.3f32, 0.42f32, 0.45f32);
+    for k in 0..steps {
+        let za = z0 + k as f32 * run;
+        let top = (k + 1) as f32 * rise;
+        b.mesh.cube_faces(v3(3.7, 0.0, za), v3(6.0, top, za + run), &wood, 1.0, [true, false, false, true, true, false]);
+        // Balustres.
+        b.mesh.cube(v3(3.72, top, za + 0.17), v3(3.79, top + 0.95, za + 0.24), &rail, 1.0);
+    }
+    let r0 = v3(3.68, 1.4, z0);
+    let r1 = v3(3.68, 0.95 + steps as f32 * rise, z0 + steps as f32 * run);
+    b.mesh.quad([r0, r1, r1 + v3(0.15, 0.0, 0.0), r0 + v3(0.15, 0.0, 0.0)], [[0.0; 2]; 4], &rail, Vec3::UP);
+    b.mesh.quad([r0 - v3(0.0, 0.1, 0.0), r1 - v3(0.0, 0.1, 0.0), r1, r0], [[0.0; 2]; 4], &rail, v3(-1.0, 0.0, 0.0));
+    b.mesh.cube(v3(3.66, 0.0, z0 - 0.08), v3(3.84, 1.5, z0 + 0.1), &rail, 1.0);
+    // Trémie : le haut de l'escalier se perd dans l'obscurité de l'étage.
+    let black = Mat::col([0.0, 0.0, 0.0]);
+    b.mesh.quad([v3(3.7, 4.97, 23.6), v3(6.0, 4.97, 23.6), v3(6.0, 4.97, 26.0), v3(3.7, 4.97, 26.0)], [[0.0; 2]; 4], &black, -Vec3::UP);
+    b.obstacle(3.6, z0, 6.0, 26.0, true);
     // Table de lecture.
     b.table(-1.0, 23.4, 1.0, 24.4, 0.8, Mat::tex(T_WOOD, [0.55, 0.4, 0.3]), false);
     let metal = Mat::tex(T_METAL, [0.3, 0.3, 0.25]);
@@ -891,7 +1114,7 @@ fn library() -> Room {
     b.light(v3(0.5, 1.2, 23.6), [0.7, 0.62, 0.38], 5.5, 0.0);
     let note = Mat::tex(T_NOTE, [1.0, 1.0, 1.0]);
     b.mesh.cube(v3(0.0, 0.8, 23.7), v3(0.32, 0.81, 24.05), &note, 1.0);
-    b.interacts.push(Interact { pos: v3(0.15, 0.0, 23.0), radius: 0.9, kind: InteractKind::Note });
+    b.interacts.push(Interact { pos: v3(0.15, 0.0, 23.0), radius: 0.9, kind: InteractKind::Note(NOTE_LIBRARY) });
     for x in [-1.6f32, 1.6] {
         b.sconce(v3(x, 2.2, 14.05), v3(0.0, 0.0, 1.0), 4.0);
     }
@@ -900,32 +1123,76 @@ fn library() -> Room {
     b.moon_spill(v3(3.1, 2.6, 25.5), 5.5);
     b.moon_spill(v3(-5.5, 2.4, 20.0), 4.5);
     let cameras = vec![
-        cam((-BIG, -BIG), (0.0, 20.0), v3(5.2, 3.4, 25.4), v3(-3.5, 0.6, 15.5), 64.0),
+        cam((-BIG, -BIG), (0.0, 20.0), v3(3.0, 3.6, 25.6), v3(-3.5, 0.6, 15.0), 64.0),
         cam((0.0, -BIG), (BIG, 20.0), v3(-5.2, 3.4, 25.4), v3(3.5, 0.6, 15.5), 64.0),
         cam((-BIG, 20.0), (0.0, BIG), v3(5.2, 3.4, 14.6), v3(-3.5, 0.6, 24.5), 64.0),
         cam((0.0, 20.0), (BIG, BIG), v3(-5.2, 3.4, 14.6), v3(3.5, 0.6, 24.5), 64.0),
     ];
-    let doors = vec![door(v3(0.0, 0.0, 14.0), v3(0.0, 0.0, 1.0), ROOM_HALL, v3(0.0, 0.0, 13.1), PI, None)];
+    let doors = vec![
+        door(v3(0.0, 0.0, 14.0), v3(0.0, 0.0, 1.0), ROOM_HALL, v3(0.0, 0.0, 13.1), PI, None),
+        door(v3(4.85, 0.0, 21.3), v3(0.0, 0.0, -1.0), ROOM_GALLERY, v3(4.8, 0.0, 20.9), 0.0, None).stairs(true),
+    ];
     b.build("BIBLIOTHÈQUE", cameras, doors, [0.05, 0.05, 0.065], vec![])
 }
 
+pub const NOTE_LIBRARY: &[&str] = &[
+    "Une note griffonnée à la hâte, tachée de sang :",
+    "« Les chiens du marais hurlent chaque nuit depuis que le Docteur a ouvert la crypte. »",
+    "« Ceux qui sont morts dans cette maison ne restent pas morts. Ne descendez pas au sous-sol. »",
+    "« Le Docteur s'est enfermé à l'étage, dans son laboratoire. Il a gardé sur lui la grande clé de la porte d'entrée. Personne ne doit quitter le domaine. »",
+];
+
+pub const NOTE_STUDY: &[&str] = &[
+    "Le journal de Lord Ashcroft, docteur en médecine. Quelques lignes lisibles :",
+    "« 3 octobre. Alice nous a quittés. La fièvre a été plus forte que ma science. Eleanor ne dort plus. »",
+    "« 19 novembre. Les rites de la crypte fonctionnent. Le cœur du chien a battu de nouveau pendant une heure. Une heure ! »",
+    "« Le reste du journal est déchiré. »",
+];
+
 pub fn build() -> World {
-    let rooms = vec![hall(), dining(), corridor(), study(), library()];
-    let items = vec![
-        ItemSpawn { room: ROOM_DINING, pos: v3(-7.5, 0.9, 11.65), kind: ItemKind::Ammo(15) },
-        ItemSpawn { room: ROOM_CORRIDOR, pos: v3(7.5, 1.0, -0.75), kind: ItemKind::Ammo(10) },
-        ItemSpawn { room: ROOM_STUDY, pos: v3(10.6, 0.8, 25.0), kind: ItemKind::Key(KEY_EMBLEM) },
-        ItemSpawn { room: ROOM_STUDY, pos: v3(13.65, 1.0, 20.9), kind: ItemKind::Medkit },
-        ItemSpawn { room: ROOM_LIBRARY, pos: v3(-0.55, 0.8, 23.9), kind: ItemKind::Ammo(15) },
-        ItemSpawn { room: ROOM_LIBRARY, pos: v3(4.6, 0.0, 21.6), kind: ItemKind::Medkit },
+    let rooms = vec![
+        hall(),
+        dining(),
+        corridor(),
+        study(),
+        library(),
+        below::kitchen(),
+        upstairs::gallery(),
+        upstairs::bedroom(),
+        upstairs::nursery(),
+        upstairs::lab(),
+        below::crypt_stairs(),
+        below::crypt(),
+        outside::porch(),
+        outside::marsh(),
     ];
-    let zombies = vec![
-        ZombieSpawn { room: ROOM_DINING, pos: v3(-15.9, 0.0, 3.8), yaw: PI + 0.5, eating: true },
-        ZombieSpawn { room: ROOM_CORRIDOR, pos: v3(7.6, 0.0, 15.5), yaw: PI, eating: false },
-        ZombieSpawn { room: ROOM_LIBRARY, pos: v3(-3.0, 0.0, 20.4), yaw: FRAC_PI_2, eating: false },
-        ZombieSpawn { room: ROOM_LIBRARY, pos: v3(2.8, 0.0, 24.6), yaw: PI, eating: false },
+    use ItemKind::*;
+    let mut items = vec![
+        item(ROOM_DINING, v3(-7.5, 0.9, 11.65), Ammo(15)),
+        item(ROOM_CORRIDOR, v3(7.5, 1.0, -0.75), Ammo(10)),
+        item(ROOM_STUDY, v3(10.6, 0.8, 25.0), Key(KEY_EMBLEM)),
+        item(ROOM_STUDY, v3(13.65, 1.0, 20.9), Herb),
+        item(ROOM_LIBRARY, v3(-0.55, 0.8, 23.9), Ammo(15)),
+        item(ROOM_LIBRARY, v3(4.9, 0.0, 15.3), Medkit),
     ];
-    World { rooms, items, zombies }
+    items.extend(below::items());
+    items.extend(upstairs::items());
+    items.extend(outside::items());
+    let mut enemies = vec![
+        EnemySpawn { state: SpawnState::Eating, ..zombie(ROOM_DINING, -15.9, 3.8, PI + 0.5) },
+        zombie(ROOM_CORRIDOR, 7.6, 15.5, PI),
+        zombie(ROOM_LIBRARY, -3.0, 20.4, FRAC_PI_2),
+        EnemySpawn { look: 1, ..zombie(ROOM_LIBRARY, 1.6, 25.2, PI) },
+        // Retour dans la bibliothèque après la clé de la crypte.
+        EnemySpawn { look: 2, wake: Some(F_CRYPT_KEY), ..zombie(ROOM_LIBRARY, -4.2, 15.6, 0.3) },
+        // Après la mort du Docteur, les morts du hall se relèvent.
+        EnemySpawn { state: SpawnState::Lying, wake: Some(F_BOSS_DEAD), ..zombie(ROOM_HALL, 3.6, 4.0, 2.0) },
+        EnemySpawn { state: SpawnState::Lying, look: 1, wake: Some(F_BOSS_DEAD), ..zombie(ROOM_DINING, -9.0, 4.0, -1.0) },
+    ];
+    enemies.extend(below::enemies());
+    enemies.extend(upstairs::enemies());
+    enemies.extend(outside::enemies());
+    World { rooms, items, enemies }
 }
 
 impl Room {

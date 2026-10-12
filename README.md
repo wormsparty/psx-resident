@@ -13,13 +13,39 @@ Les textures, modèles et sons sont tous **générés procéduralement** au dém
 
 ## Contenu de cette version
 
+Un niveau complet, du hall du manoir jusqu'au marais sous la pleine lune.
+
 - Une héroïne contrôlée en **mouvement libre relatif à la caméra** : le stick ou WASD indique une direction, pas une rotation. Quand la caméra change de plan, la direction tenue est conservée.
-- Un manoir de 5 pièces : hall, salle à manger, couloir est, bureau et bibliothèque. Chaque pièce a plusieurs **caméras fixes**, et le passage d'une pièce à l'autre se fait par la **porte qui s'ouvre** comme dans la série.
-- Par les fenêtres : ciel étoilé, **lune** voilée de nuages, **montagnes**, marais brumeux avec roseaux, arbres morts, grille en fer forgé et lucioles. Des **chiens aboient** au loin, et parfois leurs yeux luisent dans le noir. On entend aussi des grenouilles et le vent.
-- Objets : **clé au blason** (ouvre la bibliothèque), **trousses de soins** et **munitions limitées** (chargeur de 15).
-- **Zombies** : l'un dévore un cadavre, les autres errent. Ils vous saisissent et vous mordent. Le tir verrouille automatiquement la cible, avec une chance de tir critique.
-- Le **checkpoint** se fait à la machine à écrire du hall. Il est **conservé sur disque** et se reprend avec « Continuer » sur l'écran titre. En cas de mort, la partie reprend à la dernière sauvegarde.
+- **14 lieux** à caméras fixes :
+  - **rez-de-chaussée** : hall, salle à manger, couloir est, bureau, bibliothèque (avec son escalier vers l'étage) et **cuisine** ;
+  - **étage** : **galerie des portraits**, **chambre des maîtres**, **chambre d'Alice**, **laboratoire** du Docteur ;
+  - **sous-sol** : **escalier de la crypte** et **crypte des Ashcroft** ;
+  - **dehors** : **le parc** devant la façade du manoir, puis **le marais** jusqu'au ponton.
+- Transitions animées : porte qui s'ouvre, **escalier** qu'on gravit ou descend, **grille du parc**.
+- Par les fenêtres : ciel étoilé, **lune**, **montagnes**, marais brumeux avec roseaux, arbres morts, grille en fer forgé et lucioles (vus de plus haut depuis l'étage). Dehors, le même paysage devient jouable : chemin de terre, eau où l'on patauge (plus lentement), ponton.
+- **Armes** : pistolet 9 mm (chargeur de 15), **fusil à pompe** (6 cartouches, dévastateur de près, inutile de loin) et **couteau** (silencieux, inusable : il y a toujours un moyen de s'en sortir). On change d'arme dans l'inventaire.
+- **Soins** : trousses (santé complète) et **herbes médicinales** (+35).
+- **Ennemis** : zombies (certains dévorent un cadavre, d'autres font les morts et se relèvent), **chiens du marais** qui contournent leur proie et bondissent.
+- **Trois boss**, aux attaques télégraphiées et esquivables :
+  - le **Sujet 7**, qui brise sa cuve au laboratoire : coups de griffe et charges qui projettent au sol (s'il percute un mur, il reste sonné) ;
+  - **l'Abomination**, le Docteur Ashcroft fondu dans près de quatre mètres de chair, dans la crypte : griffe, lame d'os, écrasement à deux bras, et des rugissements qui **découvrent son cœur** (dégâts triplés). Plus rapide à mi-vie. Il porte la clé de la porte d'entrée ;
+  - **le Molosse**, chef de meute géant, qui garde le ponton.
+- Cinématiques d'apparition des boss (passables), barre de vie et musique de combat.
+- **Énigme** des portraits de la galerie, documents à lire (journaux, lettres, notes), une **boîte à musique**.
+- Un PNJ : **Edgar**, le vieux majordome blessé, réfugié dans la cuisine. Il aide... tant qu'il est en vie.
+- **Économie serrée** : de quoi venir à bout de tout, à condition de ne pas gaspiller ; éviter les zombies est souvent plus sage.
+- Trois **machines à écrire** (hall, galerie, escalier de la crypte). Le checkpoint est **conservé sur disque** et se reprend avec « Continuer ». En cas de mort, la partie reprend à la dernière sauvegarde.
 - L'inventaire affiche l'**électrocardiogramme** (Bien / Attention / Danger). En danger, l'héroïne boite.
+- Écran de fin avec temps de jeu, sauvegardes, ennemis abattus et rang.
+
+### Déroulement (attention, révélations)
+
+1. Bureau : la **clé au blason** ouvre la bibliothèque, dont l'escalier mène à l'étage.
+2. Les documents (chambre des maîtres, chambre d'Alice, boîte à musique) donnent l'ordre des portraits : **Alice, Brutus, Eleanor**. Le portrait du Docteur pivote et révèle la **clé au corbeau**.
+3. Chambre des maîtres : le **fusil à pompe**, au-dessus de la cheminée.
+4. Laboratoire : la **clé de la crypte**... qui réveille le Sujet 7. Edgar ne survit pas à la nuit.
+5. Cuisine, escalier de la crypte, puis la crypte : l'Abomination. La **clé du manoir** tombe dans la fosse.
+6. La porte d'entrée s'ouvre sur le parc, les chiens, le marais, le Molosse... et la barque.
 
 ## Menus et options
 
@@ -50,10 +76,10 @@ Emplacement des données :
 | Se déplacer | WASD (ZQSD en AZERTY), flèches | Stick gauche / croix |
 | Courir      | Maj                         | Stick à fond ou B  |
 | Viser       | Clic droit (suit la souris) ou Ctrl | LT (ou LB)   |
-| Tirer       | Clic gauche, Espace ou F    | RT (ou RB)         |
+| Tirer / frapper | Clic gauche, Espace ou F | RT (ou RB)         |
 | Recharger   | R                           | X                  |
 | Action / ramasser / ouvrir | E ou Entrée  | A                  |
-| Inventaire  | Tab ou I                    | Y / Affichage      |
+| Inventaire (soins, changer d'arme) | Tab ou I | Y / Affichage |
 | Pause       | Échap ou P                  | Menu (Start)       |
 
 Les touches sont **physiques** : sur un clavier AZERTY, ZQSD tombe donc à la place de WASD.
@@ -82,11 +108,11 @@ Les navigateurs n'activent le son qu'après une première touche ou un premier c
 ## Développement
 
 ```sh
-cargo test --release                       # tests de gameplay (portes, clé, tir, morsure, soins, sauvegarde)
-cargo run --release -- --shots captures/   # captures d'écran (pièces, menus clavier/manette) + temps de rendu
+cargo test --release                       # tests de gameplay (portes, clés, armes, énigme, boss, fin, sauvegarde, économie)
+cargo run --release -- --shots captures/   # captures (pièces, cinématiques, combats, menus, fin) + temps de rendu
 cargo run --release -- --visibility        # vérifie le cadrage : joueuse, portes et objets visibles, aucun trou
 cargo run --release -- --shot 2 7.5 3 x.ppm  # capture : pièce, x, z de la joueuse
-cargo run --release -- --model modele/      # planche du modèle de l'héroïne (face, dos, visée, course, visage)
+cargo run --release -- --model modele/      # planches des modèles : héroïne, Edgar, Sujet 7, chiens, Molosse, Abomination
 ```
 
 | Fichier          | Rôle |
@@ -94,10 +120,17 @@ cargo run --release -- --model modele/      # planche du modèle de l'héroïne 
 | `src/raster.rs`  | Rasteriseur PS1 (snapping, affine, tramage, brouillard, texte 8×8) |
 | `src/mesh.rs`    | Maillages et primitives de construction |
 | `src/textures.rs`| Textures procédurales |
-| `src/world.rs`   | Pièces, portes, caméras fixes, lumières, objets |
-| `src/outdoor.rs` | Marais, montagnes, ciel, lune |
-| `src/actors.rs`  | Modèles articulés et animations procédurales |
-| `src/game.rs`    | Logique de jeu, IA, diagnostic de cadrage |
+| `src/world.rs`   | Pièces du rez-de-chaussée, portes, caméras fixes, lumières, objets, ennemis |
+| `src/world/upstairs.rs` | Galerie, chambres, laboratoire |
+| `src/world/below.rs` | Cuisine, escalier de la crypte, crypte |
+| `src/world/outside.rs` | Parc et marais (pièces en plein air) |
+| `src/outdoor.rs` | Terrain, chemin, ponton, façade du manoir, montagnes, ciel, lune |
+| `src/actors.rs`  | Modèles articulés (héroïne, zombies, Edgar, Sujet 7, chiens, Abomination) et animations procédurales |
+| `src/game.rs`    | Boucle de jeu, joueuse, objets, portes, inventaire, diagnostic de cadrage |
+| `src/game/combat.rs` | Armes, visée automatique, dégâts |
+| `src/game/enemies.rs` | IA des zombies, chiens et boss |
+| `src/game/story.rs` | Drapeaux d'histoire, déclencheurs, cinématiques, énigme, Edgar, fin |
+| `src/game/render.rs` | Rendu des pièces, du plein air, des créatures et des transitions |
 | `src/game/menu.rs` | Menus, options, interface, icônes clavier/manette |
 | `src/game/save.rs` | Format de la sauvegarde |
 | `src/options.rs` | Options, stockage persistant, requêtes à la plateforme |

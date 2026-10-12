@@ -346,7 +346,7 @@ impl Game {
                         PauseItem::Controls => self.open(Mode::Controls { title: false, options: false }),
                         PauseItem::MainMenu => {
                             self.st = initial_state(&self.world);
-                            self.enter_room(ROOM_HALL, v3(0.0, 0.0, 2.4), 0.0);
+                            self.enter_room(ROOM_HALL, START_POS, 0.0);
                             self.open(Mode::Title);
                         }
                         PauseItem::Quit => self.requests.push(Request::Quit),
@@ -412,7 +412,7 @@ impl Game {
         }
     }
 
-    fn open(&mut self, m: Mode) {
+    pub(super) fn open(&mut self, m: Mode) {
         self.mode = m;
         self.sel = 0;
         self.menu_rows.clear();
@@ -530,14 +530,25 @@ impl Game {
                     let k = self.banner_t.min(1.0);
                     self.raster.text(10, 10, name, [0.8 * k, 0.75 * k, 0.6 * k], 1);
                 }
+                self.render_boss_bar();
                 let p = self.st.player.clone();
                 if p.aim_t > 0.5 {
-                    let s = format!("{:>2} / {}", self.st.inv.mag, self.st.inv.reserve);
-                    let c = if self.st.inv.mag == 0 { [0.9, 0.2, 0.2] } else { [0.85, 0.85, 0.75] };
+                    let inv = &self.st.inv;
+                    let (loaded, spare, full) = match inv.weapon {
+                        Weapon::Pistol => (inv.mag, inv.reserve, MAG_SIZE),
+                        Weapon::Shotgun => (inv.shells_mag, inv.shells, SHELL_MAG),
+                        Weapon::Knife => (0, 0, 0),
+                    };
+                    let s = match inv.weapon {
+                        Weapon::Knife => "COUTEAU".to_string(),
+                        _ => format!("{loaded:>2} / {spare}"),
+                    };
+                    let c = if inv.weapon != Weapon::Knife && loaded == 0 { [0.9, 0.2, 0.2] } else { [0.85, 0.85, 0.75] };
                     self.raster.text(W as i32 - 8 - Raster::text_width(&s, 1), H as i32 - 16, &s, c, 1);
                     let mut x = 8;
-                    x += self.prompt(x, H as i32 - 18, Act::Fire, "TIRER", TEXT) + 10;
-                    if self.st.inv.reserve > 0 && self.st.inv.mag < MAG_SIZE {
+                    let verb = if inv.weapon == Weapon::Knife { "FRAPPER" } else { "TIRER" };
+                    x += self.prompt(x, H as i32 - 18, Act::Fire, verb, TEXT) + 10;
+                    if spare > 0 && loaded < full {
                         self.prompt(x, H as i32 - 18, Act::Reload, "RECHARGER", TEXT);
                     }
                 }
@@ -550,6 +561,26 @@ impl Game {
                     self.prompt((W as i32 - w) / 2, H as i32 - 20, Act::Interact, hint, [k, k, k * 0.92]);
                 }
             }
+            Mode::Cutscene { cine, t: ct } => {
+                // Bandes noires de cinéma et nom du monstre.
+                let bar = (ct / 0.4).min(1.0);
+                let h = (26.0 * bar) as i32;
+                self.raster.fill_rect(0, 0, W as i32, h, [0.0, 0.0, 0.0], 1.0);
+                self.raster.fill_rect(0, H as i32 - h, W as i32, h, [0.0, 0.0, 0.0], 1.0);
+                let (name, at) = match cine {
+                    story::Cine::Brute => ("SUJET 7", 1.4),
+                    story::Cine::Boss => ("L'ABOMINATION", 4.3),
+                    story::Cine::Hound => ("LE MOLOSSE", 1.0),
+                };
+                if ct > at {
+                    let k = ((ct - at) / 0.6).min(1.0);
+                    self.raster.text_center(H as i32 - 52, name, [0.8 * k, 0.08 * k, 0.05 * k], 2);
+                }
+                if ct > 1.0 {
+                    self.prompt_bar(H as i32 - 18, &[(Act::Confirm, "PASSER")], true);
+                }
+            }
+            Mode::Ending { t: et } => self.render_ending(et),
             Mode::Message => {
                 if let Some(m) = self.msgs.front().cloned() {
                     let lines = wrap(&m, 36);
@@ -617,26 +648,89 @@ impl Game {
 
     fn interact_hint(&self) -> Option<&'static str> {
         let p = &self.st.player;
-        if p.aiming || p.grabbed > 0.0 || p.hp <= 0 {
+        if p.aiming || p.grabbed > 0.0 || p.knock > 0.0 || p.hp <= 0 {
             return None;
         }
-        let fwd = Vec3::from_yaw(p.yaw);
-        let front = p.pos + fwd * 0.6;
-        for (i, it) in self.world.items.iter().enumerate() {
-            if it.room == self.st.room && !self.st.taken[i] && front.dist_xz(it.pos).min(p.pos.dist_xz(it.pos) + 0.15) < 0.85 {
-                return Some("RAMASSER");
+        if self.item_in_reach().is_some() {
+            return Some("RAMASSER");
+        }
+        if let Some(d) = self.door_in_reach() {
+            return Some(match self.room().doors[d].anim {
+                DoorAnim::Stairs { up: true } => "MONTER",
+                DoorAnim::Stairs { up: false } => "DESCENDRE",
+                _ => "OUVRIR",
+            });
+        }
+        match self.interact_in_reach().map(|i| i.kind) {
+            Some(InteractKind::Npc) => Some("PARLER"),
+            Some(InteractKind::Note(_)) => Some("LIRE"),
+            Some(InteractKind::Portrait(_)) => Some("EXAMINER"),
+            Some(InteractKind::Typewriter) => Some("UTILISER"),
+            Some(InteractKind::Boat) => Some("EMBARQUER"),
+            Some(_) => Some("EXAMINER"),
+            None => None,
+        }
+    }
+
+    /// Barre de vie du boss affronté.
+    fn render_boss_bar(&mut self) {
+        let Some(i) = self.boss_active() else { return };
+        let e = &self.st.enemies[i];
+        let k = (e.hp.max(0) as f32 / e.max_hp as f32).clamp(0.0, 1.0);
+        let name = e.name();
+        let (w, x, y) = (180, (W as i32 - 180) / 2, 10);
+        let r = &mut self.raster;
+        r.text_center(y, name, [0.85, 0.75, 0.6], 1);
+        r.fill_rect(x - 1, y + 11, w + 2, 6, [0.0, 0.0, 0.0], 0.8);
+        r.rect_outline(x - 1, y + 11, w + 2, 6, [0.45, 0.4, 0.3]);
+        r.fill_rect(x, y + 12, (w as f32 * k) as i32, 4, [0.65, 0.06, 0.04], 1.0);
+        if e.weak_point_open() && (self.time * 8.0).sin() > 0.0 {
+            r.text_center(y + 21, "LE COEUR EST À DÉCOUVERT !", [1.0, 0.35, 0.2], 1);
+        }
+    }
+
+    fn render_ending(&mut self, et: f32) {
+        let r = &mut self.raster;
+        r.fill_rect(0, 0, W as i32, H as i32, [0.0, 0.0, 0.0], (et / 6.0).min(0.55));
+        let mut y = 24;
+        for (i, line) in story::ENDING_TEXT.iter().enumerate() {
+            let at = 1.5 + i as f32 * 1.6;
+            let k = ((et - at) / 1.0).clamp(0.0, 1.0);
+            for l in wrap(line, 36) {
+                if k > 0.0 {
+                    r.text_center(y, &l, [0.85 * k, 0.82 * k, 0.75 * k], 1);
+                }
+                y += 10;
+            }
+            y += 4;
+        }
+        if et > 11.0 {
+            let k = ((et - 11.0) / 1.5).min(1.0);
+            r.text_center(134, "FIN", [0.75 * k, 0.06 * k, 0.04 * k], 3);
+        }
+        if et > 13.0 {
+            let st = &self.st;
+            let secs = st.play_time as u32;
+            let rank = if secs < 40 * 60 && st.saves <= 3 {
+                "A"
+            } else if secs < 70 * 60 && st.saves <= 8 {
+                "B"
+            } else {
+                "C"
+            };
+            let lines = [
+                format!("TEMPS DE JEU    {:02}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60),
+                format!("SAUVEGARDES     {}", st.saves),
+                format!("ENNEMIS ABATTUS {}", st.kills),
+                format!("RANG            {rank}"),
+            ];
+            for (i, l) in lines.iter().enumerate() {
+                self.raster.text_center(168 + i as i32 * 11, l, GOLD, 1);
             }
         }
-        let room = self.room();
-        for d in &room.doors {
-            if p.pos.dist_xz(d.pos) < 1.3 && fwd.dot(-d.normal) > 0.4 {
-                return Some("OUVRIR");
-            }
+        if et > story::ENDING_LEN {
+            self.prompt_bar(H as i32 - 16, &[(Act::Confirm, "MENU PRINCIPAL")], false);
         }
-        if room.interacts.iter().any(|it| front.dist_xz(it.pos) < it.radius) {
-            return Some("EXAMINER");
-        }
-        None
     }
 
     fn render_title(&mut self) {
@@ -832,24 +926,44 @@ impl Game {
 
         let lx = 154;
         self.menu_rows.clear();
+        // Liste resserrée quand l'inventaire se remplit.
+        let sp = match slots.len() {
+            0..=5 => 22,
+            6..=7 => 17,
+            _ => 14,
+        };
         for (i, (_, name)) in slots.iter().enumerate() {
-            let y = 48 + i as i32 * 22;
+            let y = 48 + i as i32 * sp;
             let sel = self.sel == i;
             let r = &mut self.raster;
-            r.fill_rect(lx, y - 4, 158, 18, if sel { [0.25, 0.2, 0.1] } else { [0.08, 0.08, 0.1] }, 0.9);
-            r.rect_outline(lx, y - 4, 158, 18, if sel { [0.9, 0.75, 0.3] } else { [0.3, 0.3, 0.35] });
-            r.text(lx + 6, y + 1, name, if sel { [1.0, 0.95, 0.8] } else { [0.7, 0.7, 0.7] }, 1);
-            self.menu_rows.push((lx, y - 4, lx + 158, y + 14));
+            let bh = sp - 3;
+            r.fill_rect(lx, y - 4, 158, bh, if sel { [0.25, 0.2, 0.1] } else { [0.08, 0.08, 0.1] }, 0.9);
+            r.rect_outline(lx, y - 4, 158, bh, if sel { [0.9, 0.75, 0.3] } else { [0.3, 0.3, 0.35] });
+            r.text(lx + 6, y + (bh - 8) / 2 - 4, name, if sel { [1.0, 0.95, 0.8] } else { [0.7, 0.7, 0.7] }, 1);
+            self.menu_rows.push((lx, y - 4, lx + 158, y - 4 + bh));
         }
+        let equipped = self.st.inv.weapon;
         let (desc, action) = match slots.get(self.sel).map(|s| s.0) {
-            Some(Slot::Gun) => ("Pistolet semi-automatique. Chargeur de 15 balles.", "RECHARGER"),
+            Some(Slot::Weapon(w)) => {
+                let desc = match w {
+                    Weapon::Pistol => "Pistolet semi-automatique 9 mm. Chargeur de 15 balles.",
+                    Weapon::Shotgun => "Fusil à pompe. 6 cartouches. Dévastateur à bout portant, inutile de loin.",
+                    Weapon::Knife => "Couteau de combat. Silencieux, inusable, mais il faut s'approcher...",
+                };
+                (desc, if w == equipped { if w == Weapon::Knife { "" } else { "RECHARGER" } } else { "ÉQUIPER" })
+            }
             Some(Slot::Medkit) => ("Trousse de premiers secours. Restaure toute la santé.", "UTILISER"),
-            Some(Slot::Key) => ("Une lourde clé ornée d'un blason.", "EXAMINER"),
+            Some(Slot::Herb) => ("Herbe médicinale. Soigne légèrement les blessures.", "UTILISER"),
+            Some(Slot::Key(k)) => (key_desc(k), "EXAMINER"),
             None => ("", ""),
         };
-        for (i, l) in wrap(desc, 36).iter().enumerate() {
-            self.raster.text(16, 176 + i as i32 * 11, l, [0.75, 0.75, 0.7], 1);
+        for (i, l) in wrap(desc, 38).iter().enumerate() {
+            self.raster.text(10, 180 + i as i32 * 10, l, [0.75, 0.75, 0.7], 1);
         }
-        self.prompt_bar(H as i32 - 18, &[(Act::Confirm, action), (Act::Back, "FERMER")], false);
+        if action.is_empty() {
+            self.prompt_bar(H as i32 - 18, &[(Act::Back, "FERMER")], false);
+        } else {
+            self.prompt_bar(H as i32 - 18, &[(Act::Confirm, action), (Act::Back, "FERMER")], false);
+        }
     }
 }

@@ -299,7 +299,28 @@ fn screenshots(dir: &str) {
         ("07_study_a", 3, (11.0, 23.0), 0.4, false),
         ("08_study_b", 3, (7.5, 21.5), 0.0, false),
         ("09_library_s", 4, (0.0, 15.5), 0.0, false),
-        ("10_library_n", 4, (0.0, 22.5), 0.0, false),
+        ("10_library_n", 4, (2.5, 21.5), 0.0, false),
+        ("30_kitchen_a", 5, (-14.0, 13.5), 0.0, false),
+        ("31_kitchen_b", 5, (-12.0, 18.0), -1.5, false),
+        ("32_gallery_w", 6, (-6.0, 22.5), -1.5, false),
+        ("33_gallery_mid", 6, (0.0, 23.0), 0.0, false),
+        ("34_gallery_e", 6, (6.0, 22.5), 1.5, false),
+        ("35_bedroom_a", 7, (-13.0, 21.0), -1.0, false),
+        ("36_bedroom_b", 7, (-17.0, 23.0), 0.0, false),
+        ("37_nursery_a", 8, (-3.5, 14.5), 3.0, false),
+        ("38_nursery_b", 8, (-4.0, 18.0), 0.0, false),
+        ("39_lab_a", 9, (13.0, 19.0), 0.0, false),
+        ("40_lab_b", 9, (18.0, 24.0), 1.5, false),
+        ("41_crypt_stairs", 10, (-7.5, 17.0), 0.0, false),
+        ("42_crypt_stairs_n", 10, (-7.5, 23.0), 0.0, false),
+        ("43_crypt_a", 11, (-7.5, 30.0), 0.0, false),
+        ("44_crypt_b", 11, (-4.0, 39.0), 0.0, false),
+        ("45_porch_door", 12, (0.5, -2.5), 0.0, false),
+        ("46_porch_court", 12, (0.0, -6.0), std::f32::consts::PI, false),
+        ("47_marsh_gate", 13, (0.0, -12.0), std::f32::consts::PI, false),
+        ("48_marsh_mid", 13, (-2.0, -25.0), std::f32::consts::PI, false),
+        ("49_marsh_far", 13, (2.0, -36.0), std::f32::consts::PI, false),
+        ("50_marsh_pier", 13, (4.0, -44.0), std::f32::consts::PI, false),
     ];
     for (name, room, (x, z), yaw, aim) in shots {
         g.debug_setup(*room, v3(*x, 0.0, *z), *yaw, *aim);
@@ -315,6 +336,53 @@ fn screenshots(dir: &str) {
     g.debug_door(1.2);
     g.frame(0.0, &none);
     write_ppm(&format!("{dir}/11_door.ppm"), &g.raster.fb);
+    // Escalier de la bibliothèque et portail du parc.
+    g.debug_setup(4, v3(4.8, 0.0, 20.6), 0.0, false);
+    g.debug_door_of(1, 1.2);
+    g.frame(0.0, &none);
+    write_ppm(&format!("{dir}/11_stairs.ppm"), &g.raster.fb);
+    g.debug_setup(12, v3(0.0, 0.0, -8.0), std::f32::consts::PI, false);
+    g.debug_door_of(1, 1.2);
+    g.frame(0.0, &none);
+    write_ppm(&format!("{dir}/11_gate.ppm"), &g.raster.fb);
+
+    // Cinématiques des boss.
+    use psx_resident::world::*;
+    for (name, room, pos, cine, t) in [
+        ("60_cine_brute", ROOM_LAB, (13.0, 22.0), "brute", 1.8),
+        ("61_cine_boss_rise", ROOM_CRYPT, (-7.5, 28.0), "boss", 2.6),
+        ("62_cine_boss_roar", ROOM_CRYPT, (-7.5, 28.0), "boss", 4.6),
+        ("63_cine_hound", ROOM_MARSH, (1.0, -31.0), "hound", 1.2),
+    ] {
+        g.debug_setup(room, v3(pos.0, 0.0, pos.1), 0.0, false);
+        g.debug_progress(&[F_CRYPT_KEY, F_BOSS_INTRO, F_HOUND_INTRO]);
+        g.debug_cutscene(cine, t);
+        g.frame(0.0, &none);
+        write_ppm(&format!("{dir}/{name}.ppm"), &g.raster.fb);
+    }
+    // Combats.
+    for (name, room, pos, yaw, kind, off, atk, weapon) in [
+        ("64_fight_brute", ROOM_LAB, (13.0, 22.0), 1.57, EnemyKind::Brute, v3(2.0, 0.0, 0.3), 0.5, "shotgun"),
+        ("65_fight_boss", ROOM_CRYPT, (-7.5, 29.0), 0.0, EnemyKind::Boss, v3(0.3, 0.0, 3.0), 0.8, "shotgun"),
+        ("66_fight_boss_slam", ROOM_CRYPT, (-4.0, 37.0), std::f32::consts::PI, EnemyKind::Boss, v3(1.0, 0.0, -3.5), 1.2, "pistol"),
+        ("67_fight_dogs", ROOM_PORCH, (0.0, -4.0), std::f32::consts::PI, EnemyKind::Dog, v3(0.4, 0.0, -2.0), 0.4, "pistol"),
+        ("68_fight_hound", ROOM_MARSH, (3.0, -38.0), std::f32::consts::PI, EnemyKind::Hound, v3(0.5, 0.0, -3.2), 0.6, "knife"),
+    ] {
+        g.debug_setup(room, v3(pos.0, 0.0, pos.1), yaw, true);
+        g.debug_progress(&[F_CRYPT_KEY, F_BOSS_INTRO, F_HOUND_INTRO]);
+        g.debug_weapon(weapon);
+        g.debug_enemy(kind, off, atk);
+        g.frame(1.0 / 60.0, &Input { aim: true, ..Default::default() });
+        g.debug_shoot();
+        g.frame(0.0, &none);
+        write_ppm(&format!("{dir}/{name}.ppm"), &g.raster.fb);
+    }
+    g.debug_setup(13, v3(4.0, 0.0, -44.0), std::f32::consts::PI, false);
+    g.debug_mode("ending");
+    g.frame(1.0 / 60.0, &none);
+    write_ppm(&format!("{dir}/69_ending.ppm"), &g.raster.fb);
+    g.debug_setup(6, v3(0.0, 0.0, 23.0), 0.0, false);
+    g.debug_progress(&[F_PORTRAITS]);
     g.debug_setup(0, v3(0.0, 0.0, 2.4), 0.0, false);
     g.debug_inventory();
     g.frame(1.0 / 60.0, &none);
@@ -339,14 +407,16 @@ fn screenshots(dir: &str) {
         write_ppm(&format!("{dir}/22_inventory_{tag}.ppm"), &g.raster.fb);
     }
 
-    // Mesure de performance.
-    g.debug_setup(0, v3(0.0, 0.0, 2.4), 0.0, false);
-    let t0 = Instant::now();
-    let n = 200;
-    for _ in 0..n {
-        g.frame(1.0 / 60.0, &none);
+    // Mesure de performance (hall, crypte, marais).
+    for (label, room, x, z) in [("hall", 0, 0.0, 2.4), ("crypte", 11, -7.5, 30.0), ("marais", 13, 0.0, -25.0)] {
+        g.debug_setup(room, v3(x, 0.0, z), 0.0, false);
+        let t0 = Instant::now();
+        let n = 200;
+        for _ in 0..n {
+            g.frame(1.0 / 60.0, &none);
+        }
+        println!("rendu {label} : {:.2} ms/image", t0.elapsed().as_secs_f64() * 1000.0 / n as f64);
     }
-    println!("rendu : {:.2} ms/image", t0.elapsed().as_secs_f64() * 1000.0 / n as f64);
 }
 
 /// Planche du modèle de l'héroïne (développement) : `--model <dossier>`.
@@ -367,7 +437,7 @@ fn model_sheet(dir: &str) {
         ("front", 0.0, 2.2, Pose::idle(0.0)),
         ("three_quarter", 0.7, 2.0, Pose::idle(0.0)),
         ("side", 1.57, 2.0, Pose::walk(0.8, 0.0)),
-        ("back", 3.14, 2.0, Pose::idle(0.0)),
+        ("back", std::f32::consts::PI, 2.0, Pose::idle(0.0)),
         ("aim", 0.9, 2.0, Pose::aim(0.0, 0.0)),
         ("run", 2.2, 2.0, Pose::walk(1.3, 1.0)),
         ("face", 0.25, 0.9, Pose::idle(0.0)),
@@ -383,6 +453,66 @@ fn model_sheet(dir: &str) {
         actors::draw_body(&mut r, &hero, pose, Vec3::ZERO, 0.0, &light);
         if *name == "front" {
             actors::draw_body(&mut r, &zombie, &Pose::shamble(0.0, 0.0), v3(1.1, 0.0, -0.6), 0.0, &light);
+        }
+        write_ppm(&format!("{dir}/{name}.ppm"), &r.fb);
+    }
+    // Créatures et PNJ.
+    let butler = actors::butler(false);
+    let brute = actors::brute();
+    let dog = actors::dog(false);
+    let hound = actors::dog(true);
+    let boss = actors::abomination();
+    let cast: &[(&str, f32, f32, f32)] = &[
+        ("cast_butler", 0.5, 2.4, 0.9),
+        ("cast_brute", 0.6, 3.4, 1.2),
+        ("cast_dog", 1.2, 2.2, 0.5),
+        ("cast_dog_front", 0.4, 1.8, 0.5),
+        ("cast_hound", 1.1, 4.2, 1.0),
+        ("cast_boss", 0.5, 7.5, 2.2),
+        ("cast_boss_roar", 0.2, 6.5, 2.4),
+        ("cast_boss_swipe", 1.0, 7.5, 2.2),
+        ("cast_boss_side", 1.7, 7.5, 2.2),
+    ];
+    for (k, (name, ang, dist, h)) in cast.iter().enumerate() {
+        r.clear(0x101014);
+        let target = v3(0.0, *h, 0.0);
+        r.cam = Camera::look_at(target + v3(ang.sin() * dist, 0.4, ang.cos() * dist), target, 60.0);
+        let light = Lighting {
+            ambient: [0.3, 0.27, 0.26],
+            lights: vec![Light { pos: v3(2.0, 4.0, 3.0), color: [1.3, 1.0, 0.7], radius: 12.0 }],
+            sun: None,
+        };
+        match k {
+            0 => {
+                actors::draw_body(&mut r, &butler, &Pose::idle(0.0), v3(-0.4, 0.0, 0.0), 0.0, &light);
+                actors::draw_body(&mut r, &butler, &Pose::sitting(0.0), v3(0.5, 0.0, 0.0), 0.0, &light);
+            }
+            1 => {
+                actors::draw_body(&mut r, &brute, &Pose::brute_slash(0.4), v3(-0.5, 0.0, 0.0), 0.0, &light);
+                actors::draw_body(&mut r, &hero, &Pose::aim_shotgun(0.0), v3(1.0, 0.0, 0.5), -0.6, &light);
+            }
+            2 | 3 => {
+                let p = actors::DogPose { phase: 1.0, gait: if k == 2 { 1.0 } else { 0.0 }, jaw: 0.6, ..Default::default() };
+                actors::draw_dog(&mut r, &dog, &p, Vec3::ZERO, 0.0, 1.0, &light);
+            }
+            4 => {
+                let p = actors::DogPose { phase: 2.0, gait: 0.6, jaw: 1.0, head_pitch: -0.3, ..Default::default() };
+                actors::draw_dog(&mut r, &hound, &p, Vec3::ZERO, 0.0, 2.0, &light);
+                actors::draw_body(&mut r, &hero, &Pose::knife(0.4), v3(1.2, 0.0, 1.0), -2.0, &light);
+            }
+            _ => {
+                let mut p = actors::BossPose { rise: 1.0, t: 1.0, ..Default::default() };
+                if k == 6 {
+                    p.roar = 1.0;
+                }
+                if k == 7 {
+                    p.swipe = 0.5;
+                    p.phase = 1.0;
+                    p.walk = 1.0;
+                }
+                actors::draw_boss(&mut r, &boss, &p, Vec3::ZERO, 0.0, &light);
+                actors::draw_body(&mut r, &hero, &Pose::aim(0.0, 0.0), v3(1.6, 0.0, 2.5), -2.6, &light);
+            }
         }
         write_ppm(&format!("{dir}/{name}.ppm"), &r.fb);
     }

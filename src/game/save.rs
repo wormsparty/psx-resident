@@ -2,14 +2,16 @@
 
 use super::*;
 
-const MAGIC: &str = "MDM1";
+const MAGIC: &str = "MDM2";
 
 fn zstate_code(s: ZState) -> u32 {
     match s {
         ZState::Eating => 0,
         ZState::Idle => 1,
-        ZState::Rising | ZState::Chase | ZState::Grab | ZState::Stagger => 2,
         ZState::Dying | ZState::Dead => 3,
+        ZState::Intro => 4,
+        ZState::Lying => 5,
+        _ => 2,
     }
 }
 
@@ -18,7 +20,17 @@ fn zstate_from(c: u32) -> ZState {
         0 => ZState::Eating,
         1 => ZState::Idle,
         2 => ZState::Chase,
+        4 => ZState::Intro,
+        5 => ZState::Lying,
         _ => ZState::Dead,
+    }
+}
+
+fn weapon_code(w: Weapon) -> u32 {
+    match w {
+        Weapon::Knife => 0,
+        Weapon::Pistol => 1,
+        Weapon::Shotgun => 2,
     }
 }
 
@@ -30,24 +42,32 @@ pub(super) fn encode(st: &State) -> String {
     f(st.player.pos.z);
     f(st.player.yaw);
     f(st.player.hp as f32);
-    f(st.inv.mag as f32);
-    f(st.inv.reserve as f32);
-    f(st.inv.medkits as f32);
-    f(st.inv.keys.len() as f32);
-    for &k in &st.inv.keys {
+    let inv = &st.inv;
+    f(weapon_code(inv.weapon) as f32);
+    f(inv.mag as f32);
+    f(inv.reserve as f32);
+    f(inv.has_shotgun as u8 as f32);
+    f(inv.shells_mag as f32);
+    f(inv.shells as f32);
+    f(inv.medkits as f32);
+    f(inv.herbs as f32);
+    f(inv.keys.len() as f32);
+    for &k in &inv.keys {
         f(k as f32);
     }
-    f(st.taken.len() as f32);
-    for &t in &st.taken {
-        f(t as u8 as f32);
+    for list in [&st.taken, &st.unlocked, &st.flags] {
+        f(list.len() as f32);
+        for &b in list.iter() {
+            f(b as u8 as f32);
+        }
     }
-    f(st.unlocked.len() as f32);
-    for &u in &st.unlocked {
-        f(u as u8 as f32);
-    }
-    f(st.zombies.len() as f32);
-    for z in &st.zombies {
-        f(z.room as f32);
+    f(st.puzzle as f32);
+    f(st.play_time);
+    f(st.saves as f32);
+    f(st.kills as f32);
+    f(st.enemies.len() as f32);
+    for z in &st.enemies {
+        f(if z.room == NOWHERE { -1.0 } else { z.room as f32 });
         f(z.pos.x);
         f(z.pos.z);
         f(z.yaw);
@@ -61,7 +81,6 @@ pub(super) fn encode(st: &State) -> String {
         f(b.0 as f32);
         f(b.1.x);
         f(b.1.z);
-        f(b.3);
         f(b.3);
     }
     o.join(" ")
@@ -81,31 +100,48 @@ pub(super) fn decode(s: &str, world: &World) -> Option<State> {
     }
     let (x, z, yaw) = (n()?, n()?, n()?);
     st.player.pos = v3(x, 0.0, z);
+    if world.rooms[st.room].outdoor {
+        st.player.pos.y = outdoor::walk_h(x, z);
+    }
     st.player.yaw = yaw;
     st.player.hp = n()? as i32;
+    st.inv.weapon = match n()? as u32 {
+        0 => Weapon::Knife,
+        2 => Weapon::Shotgun,
+        _ => Weapon::Pistol,
+    };
     st.inv.mag = n()? as u32;
     st.inv.reserve = n()? as u32;
+    st.inv.has_shotgun = n()? != 0.0;
+    st.inv.shells_mag = n()? as u32;
+    st.inv.shells = n()? as u32;
     st.inv.medkits = n()? as u32;
+    st.inv.herbs = n()? as u32;
     let nk = n()? as usize;
     st.inv.keys = (0..nk).map(|_| n().map(|k| k as u8)).collect::<Option<_>>()?;
-    if n()? as usize != st.taken.len() {
+    for list in [&mut st.taken, &mut st.unlocked, &mut st.flags] {
+        if n()? as usize != list.len() {
+            return None;
+        }
+        for b in list.iter_mut() {
+            *b = n()? != 0.0;
+        }
+    }
+    st.puzzle = n()? as u8;
+    st.play_time = n()?;
+    st.saves = n()? as u32;
+    st.kills = n()? as u32;
+    if n()? as usize != st.enemies.len() {
         return None;
     }
-    for t in st.taken.iter_mut() {
-        *t = n()? != 0.0;
-    }
-    if n()? as usize != st.unlocked.len() {
-        return None;
-    }
-    for u in st.unlocked.iter_mut() {
-        *u = n()? != 0.0;
-    }
-    if n()? as usize != st.zombies.len() {
-        return None;
-    }
-    for zb in st.zombies.iter_mut() {
-        zb.room = n()? as usize;
-        zb.pos = v3(n()?, 0.0, n()?);
+    for zb in st.enemies.iter_mut() {
+        let room = n()?;
+        zb.room = if room < 0.0 { NOWHERE } else { room as usize };
+        let (x, z) = (n()?, n()?);
+        zb.pos = v3(x, 0.0, z);
+        if zb.room < world.rooms.len() && world.rooms[zb.room].outdoor {
+            zb.pos.y = outdoor::walk_h(x, z);
+        }
         zb.yaw = n()?;
         zb.hp = n()? as i32;
         zb.state = zstate_from(n()? as u32);
@@ -117,9 +153,8 @@ pub(super) fn decode(s: &str, world: &World) -> Option<State> {
         .map(|_| {
             let room = n()? as usize;
             let p = v3(n()?, 0.0, n()?);
-            let r = n()?;
             let max = n()?;
-            Some((room, p, r, max))
+            Some((room, p, max, max))
         })
         .collect::<Option<_>>()?;
     Some(st)
