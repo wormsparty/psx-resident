@@ -116,9 +116,49 @@ impl Game {
         }
     }
 
+    /// Ennemi visé : celui sous le curseur de la souris, sinon le plus proche
+    /// devant la joueuse (manette, clavier).
+    pub(super) fn enemy_under_cursor(&self, sx: f32, sy: f32) -> Option<usize> {
+        let mut best: Option<(usize, f32)> = None;
+        for (i, z) in self.st.enemies.iter().enumerate() {
+            if !z.targetable(self.st.room) || z.state == ZState::Lying {
+                continue;
+            }
+            // Silhouette approchée par un segment vertical, des pieds à la tête.
+            let foot = z.pos + v3(0.0, 0.1, 0.0);
+            let head = z.pos + v3(0.0, z.hit_height() + 0.35, 0.0);
+            let (Some(a), Some(b)) = (self.cam.project(foot), self.cam.project(head)) else { continue };
+            let (ax, ay, bx, by) = (a.0, a.1, b.0, b.1);
+            let (dx, dy) = (bx - ax, by - ay);
+            let l2 = (dx * dx + dy * dy).max(1e-3);
+            let u = (((sx - ax) * dx + (sy - ay) * dy) / l2).clamp(0.0, 1.0);
+            let (px, py) = (ax + dx * u - sx, ay + dy * u - sy);
+            let d = (px * px + py * py).sqrt();
+            // Largeur à l'écran : rayon de touche, plus une marge généreuse.
+            let r = (z.hit_radius() * self.cam.focal / a.2).max(4.0) + 6.0;
+            if d < r && best.map_or(true, |b| d < b.1) {
+                best = Some((i, d));
+            }
+        }
+        best.map(|b| b.0)
+    }
+
+    /// Point d'origine et direction du tir. Si la cible verrouillée est
+    /// presque en face, le tir part droit sur elle : on touche ce qu'on vise.
     fn origin(&self) -> (Vec3, Vec3) {
         let p = &self.st.player;
-        (p.pos + v3(0.0, 1.35, 0.0), Vec3::from_yaw(p.yaw))
+        let origin = p.pos + v3(0.0, 1.35, 0.0);
+        let fwd = Vec3::from_yaw(p.yaw);
+        if let Some(zi) = p.lock {
+            let z = &self.st.enemies[zi];
+            if z.targetable(self.st.room) {
+                let d = (z.pos - p.pos).flat();
+                if d.len() > 0.1 && d.norm().dot(fwd) > 0.94 {
+                    return (origin, d.norm());
+                }
+            }
+        }
+        (origin, fwd)
     }
 
     /// Le coup de feu alerte toute la pièce.
@@ -181,11 +221,9 @@ impl Game {
         self.alert_room();
         match best {
             Some((zi, th)) => {
-                let crit = self.rng.chance(0.1) && th < 4.0;
-                let big = self.st.enemies[zi].is_boss();
-                let dmg = if crit { if big { 3 } else { 10 } } else { 1 };
+                // Pas de coup critique aléatoire : une balle, un point de dégât.
                 let at = v3(origin.x, self.st.enemies[zi].pos.y, origin.z) + fwd * th;
-                self.damage_enemy(zi, Hit { dmg, at, dir: fwd, push: 0.0, crit });
+                self.damage_enemy(zi, Hit { dmg: 1, at, dir: fwd, push: 0.0, crit: false });
             }
             None => self.impact_wall(origin, fwd, wall_t),
         }
@@ -251,7 +289,7 @@ impl Game {
         let pitch = self.rng.range(0.9, 1.15);
         self.play(Sfx::Slash, 0.7, 0.0, pitch);
         let p = self.st.player.clone();
-        let fwd = Vec3::from_yaw(p.yaw);
+        let fwd = self.origin().1;
         let mut best: Option<(usize, f32)> = None;
         for (i, z) in self.st.enemies.iter().enumerate() {
             if !z.targetable(self.st.room) {
@@ -265,9 +303,8 @@ impl Game {
         }
         // Le couteau est silencieux : il n'alerte personne.
         if let Some((zi, _)) = best {
-            let crit = self.rng.chance(0.15);
             let at = p.pos + fwd * 0.7 + v3(0.0, 1.1, 0.0);
-            self.damage_enemy(zi, Hit { dmg: if crit { 2 } else { 1 }, at, dir: fwd, push: 0.0, crit });
+            self.damage_enemy(zi, Hit { dmg: 1, at, dir: fwd, push: 0.0, crit: false });
         }
     }
 

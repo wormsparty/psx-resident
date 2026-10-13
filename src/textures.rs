@@ -43,6 +43,8 @@ pub const T_OLDFACE: i16 = 36;
 pub const T_HERB: i16 = 37;
 pub const T_SHELLS: i16 = 38;
 pub const T_BRUTEFACE: i16 = 39;
+pub const T_LADY: i16 = 40;
+pub const T_DOCTOR: i16 = 41;
 
 type C = [f32; 3];
 
@@ -94,6 +96,125 @@ fn wallpaper(x: usize, y: usize, base: C, motif: C, seed: u32) -> C {
     }
     let stain = fbm(x as f32 / 12.0, y as f32 / 12.0, 3, seed);
     sc(c, 0.65 + 0.45 * stain)
+}
+
+/// Portrait peint (32x48) : fond, habit, visage et coiffure, éclairés en
+/// clair-obscur depuis la gauche, sous un vernis jauni et craquelé.
+struct Portrait {
+    bg: C,
+    halo: C,
+    coat: C,
+    /// Chemise ou col (égal à `coat` pour un col montant).
+    shirt: C,
+    skin: C,
+    hair: C,
+    /// 0 : courts, 1 : chignon, 2 : dégarni.
+    style: u8,
+    beard: bool,
+    mustache: bool,
+    glasses: bool,
+    /// Broche, camée ou cravate au col.
+    jewel: Option<C>,
+    seed: u32,
+}
+
+fn portrait(x: usize, y: usize, p: &Portrait) -> C {
+    if x < 3 || x > 28 || y < 3 || y > 44 {
+        let lit = x < 3 && x < y || y < 3 && y <= x;
+        let edge = x == 0 || y == 0 || x == 31 || y == 47;
+        return sc([0.62, 0.46, 0.16], if edge { 0.5 } else if lit { 1.25 } else { 0.8 });
+    }
+    let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
+    let n = fbm(fx / 5.0, fy / 5.0, 3, p.seed);
+    // Fond : dégradé vers le bas, lueur derrière la tête.
+    let mut c = mix(p.bg, sc(p.bg, 0.4), (fy - 3.0) / 42.0);
+    let halo = (1.0 - ((fx - 14.0).powi(2) + (fy - 15.0).powi(2)).sqrt() / 13.0).max(0.0);
+    c = sc(mix(c, p.halo, halo * 0.7), 0.8 + 0.4 * n);
+    let dx = fx - 16.0;
+    // Habit : épaules qui s'évasent, éclairées à gauche.
+    let sy = fy - 26.0;
+    let half = 5.5 + sy * 1.3;
+    if sy > 0.0 && dx.abs() < half {
+        let k = dx / half;
+        c = sc(p.coat, 1.15 - 0.45 * (k + 1.0) * 0.5 + 0.25 * n);
+        if dx.abs() < 2.6 - sy * 0.35 {
+            c = sc(p.shirt, 1.05 - 0.2 * (k + 1.0) + 0.1 * n);
+        }
+        if let Some(j) = p.jewel {
+            if (fy - 28.0).abs() < 1.0 && dx.abs() < 1.0 {
+                c = j;
+            }
+        }
+    }
+    // Cou.
+    if (23.0..27.0).contains(&fy) && dx.abs() < 2.2 {
+        c = sc(p.skin, 0.62 - 0.1 * (dx / 2.2));
+    }
+    // Visage : ovale ombré à droite et sous la mâchoire.
+    let (ex, ey) = (dx / 4.6, (fy - 18.0) / 6.2);
+    let face = ex * ex + ey * ey < 1.0;
+    if face {
+        let shade = 1.12 - 0.3 * (ex + 1.0) * 0.5 - 0.25 * ey.max(0.0).powi(2);
+        c = sc(p.skin, shade + 0.08 * n);
+        if (19..=20).contains(&y) && (x == 12 || x == 19) {
+            c = mix(c, [0.75, 0.3, 0.25], 0.25);
+        }
+        if y == 15 && (x == 12 || x == 13 || x == 18 || x == 19) {
+            c = sc(p.hair, 0.7);
+        }
+        if y == 16 && (x == 13 || x == 18) {
+            c = [0.07, 0.05, 0.04];
+        }
+        if y == 16 && (x == 12 || x == 19) {
+            c = sc(p.skin, 0.7);
+        }
+        if x == 17 && (18..=19).contains(&y) {
+            c = sc(p.skin, 0.68);
+        }
+        if y == 20 && (15..=16).contains(&x) {
+            c = sc(p.skin, 0.78);
+        }
+        if y == 22 && (14..=17).contains(&x) {
+            c = [0.42, 0.14, 0.12];
+        }
+    }
+    // Pilosité.
+    if p.mustache && y == 21 && (13..=18).contains(&x) {
+        c = sc(p.hair, 0.9);
+    }
+    if p.beard {
+        let (bx, by) = (dx / 5.0, (fy - 19.0) / 7.5);
+        if fy > 21.0 && bx * bx + by * by < 1.0 && !(y == 22 && (14..=17).contains(&x)) {
+            c = sc(p.hair, 1.0 - 0.3 * (bx + 1.0) * 0.5 + 0.2 * n);
+        }
+    }
+    // Chevelure.
+    let (hx, hy) = (dx / 5.4, (fy - 16.0) / 7.2);
+    let in_hair = hx * hx + hy * hy < 1.0;
+    let hair = match p.style {
+        0 => in_hair && (fy < 14.0 || (dx.abs() > 4.0 && fy < 20.0)),
+        1 => {
+            let bun = (dx.powi(2) + (fy - 8.0).powi(2)).sqrt() < 3.2;
+            bun || (in_hair && fy < 14.5 && x != 16) || (dx.abs() > 4.2 && dx.abs() < 6.0 && (10.0..21.0).contains(&fy))
+        }
+        _ => in_hair && dx.abs() > 3.6 && (11.0..19.0).contains(&fy),
+    };
+    if hair {
+        c = sc(p.hair, 1.15 - 0.4 * (hx + 1.0) * 0.5 + 0.35 * n);
+    }
+    if p.glasses {
+        // Petits lorgnons cerclés d'or autour de chaque œil.
+        let rim = |ex: usize| (y == 15 || y == 17) && x == ex || y == 16 && (x + 1 == ex || x == ex + 1);
+        if rim(13) || rim(18) || (y == 16 && (15..=16).contains(&x)) {
+            c = [0.8, 0.66, 0.32];
+        }
+    }
+    // Vernis jauni, craquelures.
+    c = mix(c, [0.32, 0.24, 0.1], 0.12);
+    if hash2(x as i32, y as i32, p.seed + 9) > 0.975 {
+        c = sc(c, 0.85);
+    }
+    c
 }
 
 pub fn build() -> Vec<Texture> {
@@ -260,34 +381,22 @@ pub fn build() -> Vec<Texture> {
         c
     }));
 
-    // T_PAINTING : portrait inquiétant (32x48).
-    v.push(gen(32, 48, |x, y| {
-        let frame = x < 3 || x > 28 || y < 3 || y > 44;
-        if frame {
-            let b = if x == 1 || y == 1 { 1.3 } else { 0.9 };
-            return sc([0.6, 0.45, 0.15], b);
-        }
-        let n = fbm(x as f32 / 6.0, y as f32 / 6.0, 3, 15);
-        let mut c: C = sc([0.12, 0.08, 0.05], 0.7 + 0.6 * n);
-        let fx = (x as f32 - 15.5) / 6.0;
-        let fy = (y as f32 - 17.0) / 8.0;
-        if fx * fx + fy * fy < 1.0 {
-            c = sc([0.75, 0.66, 0.55], 0.75 + 0.2 * n);
-            // Yeux noirs.
-            if (y == 15 || y == 16) && (x == 13 || x == 18) {
-                c = [0.0, 0.0, 0.0];
-            }
-            if y == 22 && (14..=17).contains(&x) {
-                c = [0.25, 0.05, 0.05];
-            }
-        }
-        // Épaules / habit sombre.
-        let sy = y as f32 - 34.0;
-        if sy > 0.0 && (x as f32 - 15.5).abs() < 4.0 + sy * 1.5 {
-            c = sc([0.08, 0.08, 0.12], 0.8 + 0.4 * n);
-        }
-        c
-    }));
+    // T_PAINTING : un ancêtre Ashcroft, barbu, en habit rouge (32x48).
+    let ancestor = Portrait {
+        bg: [0.17, 0.2, 0.13],
+        halo: [0.42, 0.36, 0.22],
+        coat: [0.48, 0.09, 0.07],
+        shirt: [0.85, 0.82, 0.72],
+        skin: [0.8, 0.62, 0.5],
+        hair: [0.26, 0.17, 0.1],
+        style: 0,
+        beard: true,
+        mustache: true,
+        glasses: false,
+        jewel: None,
+        seed: 15,
+    };
+    v.push(gen(32, 48, |x, y| portrait(x, y, &ancestor)));
 
     // T_GRASS : herbe de marais.
     v.push(gen(32, 32, |x, y| {
@@ -580,8 +689,9 @@ pub fn build() -> Vec<Texture> {
         let n = fbm(x as f32 / 2.0, y as f32 / 5.0, 3, 40);
         let streak = hash2(x as i32, (y / 3) as i32, 41);
         let mut c = sc([0.20, 0.16, 0.12], 0.55 + 0.6 * n * (0.8 + 0.4 * streak));
-        // Plaies à vif.
-        if fbm(x as f32 / 4.0, y as f32 / 4.0, 2, 42) > 0.68 {
+        // Plaies à vif (pas sur les lignes de bord : elles dessineraient des
+        // anneaux rouges aux jointures des membres).
+        if (2..30).contains(&y) && fbm(x as f32 / 4.0, y as f32 / 4.0, 2, 42) > 0.68 {
             c = [0.42, 0.10, 0.08];
         }
         c
@@ -749,5 +859,39 @@ pub fn build() -> Vec<Texture> {
         skin
     }));
 
+
+    // T_LADY : Lady Eleanor, en deuil, chignon sombre et camée (32x48).
+    let lady = Portrait {
+        bg: [0.11, 0.12, 0.2],
+        halo: [0.3, 0.32, 0.45],
+        coat: [0.07, 0.065, 0.08],
+        shirt: [0.07, 0.065, 0.08],
+        skin: [0.88, 0.78, 0.72],
+        hair: [0.2, 0.13, 0.09],
+        style: 1,
+        beard: false,
+        mustache: false,
+        glasses: false,
+        jewel: Some([0.9, 0.85, 0.75]),
+        seed: 55,
+    };
+    v.push(gen(32, 48, |x, y| portrait(x, y, &lady)));
+
+    // T_DOCTOR : Lord Ashcroft, dégarni, lorgnons et cravate rouge (32x48).
+    let doctor = Portrait {
+        bg: [0.26, 0.06, 0.05],
+        halo: [0.48, 0.16, 0.1],
+        coat: [0.08, 0.08, 0.1],
+        shirt: [0.88, 0.86, 0.8],
+        skin: [0.74, 0.6, 0.52],
+        hair: [0.62, 0.62, 0.6],
+        style: 2,
+        beard: false,
+        mustache: true,
+        glasses: true,
+        jewel: Some([0.55, 0.06, 0.05]),
+        seed: 56,
+    };
+    v.push(gen(32, 48, |x, y| portrait(x, y, &doctor)));
     v
 }

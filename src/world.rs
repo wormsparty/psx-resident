@@ -256,6 +256,8 @@ pub struct Room {
     /// Pièce en plein air : terrain, ciel et façade du manoir.
     pub outdoor: bool,
     pub cond: Vec<CondMesh>,
+    /// Portraits de l'énigme : (numéro, cadre au repos, cadre enfoncé).
+    pub portraits: Vec<(u8, Mesh, Mesh)>,
 }
 
 pub struct World {
@@ -724,6 +726,7 @@ impl Builder {
             level: 0.0,
             outdoor: false,
             cond: Vec::new(),
+            portraits: Vec::new(),
         }
     }
 }

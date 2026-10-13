@@ -49,33 +49,30 @@ pub fn gallery() -> Room {
     );
     let carpet = Mat::tex(T_CARPET, [0.75, 0.75, 0.85]).decal();
     b.mesh.grid(v3(-9.6, 0.01, 23.8), v3(19.2, 0.0, 0.0), v3(0.0, 0.0, -1.6), [0.0, 0.0], [9.6, 0.8], 1.0, &carpet, Vec3::UP);
-    // Les quatre portraits de la famille.
+    // Les quatre portraits de la famille, dans de lourds cadres dorés munis
+    // d'une plaque : bien plus imposants que les tableaux du reste du manoir.
+    // Un cadre enfoncé recule dans le mur et sa plaque s'allume.
     let n = v3(0.0, 0.0, -1.0);
     // De gauche à droite : Brutus, Eleanor, Alice, le Docteur (pas dans l'ordre !).
-    b.painting(v3(-7.5, 2.0, 26.0), n, 1.0, 1.5, T_HOUND_PORTRAIT);
-    b.painting(v3(4.0, 2.0, 26.0), n, 1.0, 1.5, T_GIRL);
-    let lady = Mat::tex(T_PAINTING, [0.9, 0.8, 1.0]);
-    {
-        let c = v3(-4.0, 2.0, 26.0 - 0.03);
-        b.mesh.quad([c + v3(0.5, -0.75, 0.0), c + v3(-0.5, -0.75, 0.0), c + v3(-0.5, 0.75, 0.0), c + v3(0.5, 0.75, 0.0)], [[0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]], &lady, n);
-    }
-    for x in [-7.5f32, -4.0, 4.0, 7.5] {
-        b.mesh.cube(v3(x - 0.3, 1.05, 25.9), v3(x + 0.3, 1.1, 26.0), &Mat::col([0.6, 0.47, 0.2]), 1.0);
+    let mut portraits = Vec::new();
+    for (id, x, tex) in [(1u8, -7.5f32, T_HOUND_PORTRAIT), (2, -4.0, T_LADY), (0, 4.0, T_GIRL)] {
+        let rest = family_portrait(v3(x, 2.0, 26.0), tex, false);
+        let pressed = family_portrait(v3(x, 2.0, 26.0), tex, true);
+        portraits.push((id, rest, pressed));
     }
     for (id, x) in [(1u8, -7.5f32), (2, -4.0), (0, 4.0), (3, 7.5)] {
         b.interacts.push(Interact { pos: v3(x, 0.0, 25.3), radius: 0.75, kind: InteractKind::Portrait(id) });
     }
     // Le portrait du Docteur : fermé, puis pivoté sur une niche secrète.
-    let doc = Mat::tex(T_PAINTING, [1.0, 1.0, 1.0]);
-    let mut closed = Mesh::new();
-    let c = v3(7.5, 2.0, 25.97);
-    closed.quad([c + v3(0.5, -0.75, 0.0), c + v3(-0.5, -0.75, 0.0), c + v3(-0.5, 0.75, 0.0), c + v3(0.5, 0.75, 0.0)], [[0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]], &doc, n);
+    let doc = Mat::tex(T_DOCTOR, [1.0, 1.0, 1.0]);
+    let closed = family_portrait(v3(7.5, 2.0, 26.0), T_DOCTOR, false);
     let mut open = Mesh::new();
     // Niche sombre et cadre ouvert à 80°.
     let dark = Mat::col([0.04, 0.03, 0.03]);
-    open.quad([v3(7.1, 0.9, 25.98), v3(7.9, 0.9, 25.98), v3(7.9, 1.6, 25.98), v3(7.1, 1.6, 25.98)], [[0.0; 2]; 4], &dark, n);
-    open.quad([v3(7.1, 0.9, 25.7), v3(7.9, 0.9, 25.7), v3(7.9, 0.9, 25.98), v3(7.1, 0.9, 25.98)], [[0.0; 2]; 4], &Mat::tex(T_STONE, [0.5, 0.5, 0.5]), Vec3::UP);
-    let hinge = v3(7.0, 2.0, 25.97);
+    // La niche est creusée derrière la toile, à hauteur de main.
+    open.quad([v3(7.1, 1.4, 25.98), v3(7.9, 1.4, 25.98), v3(7.9, 2.2, 25.98), v3(7.1, 2.2, 25.98)], [[0.0; 2]; 4], &dark, n);
+    open.quad([v3(7.1, 1.4, 25.7), v3(7.9, 1.4, 25.7), v3(7.9, 1.4, 25.98), v3(7.1, 1.4, 25.98)], [[0.0; 2]; 4], &Mat::tex(T_STONE, [0.5, 0.5, 0.5]), Vec3::UP);
+    let hinge = v3(6.9, 2.0, 25.97);
     let dir = v3(-0.17, 0.0, -0.98);
     open.quad(
         [hinge + v3(0.0, -0.75, 0.0), hinge + dir + v3(0.0, -0.75, 0.0), hinge + dir + v3(0.0, 0.75, 0.0), hinge + v3(0.0, 0.75, 0.0)],
@@ -83,7 +80,17 @@ pub fn gallery() -> Room {
         &doc.two(),
         v3(1.0, 0.0, 0.0),
     );
-    b.mesh.quad([v3(7.0, 0.95, 25.99), v3(8.0, 0.95, 25.99), v3(8.0, 1.05, 25.99), v3(7.0, 1.05, 25.99)], [[0.0; 2]; 4], &Mat::col([0.6, 0.47, 0.2]), n);
+    // Le cadre doré pivote avec la toile.
+    let gilt = Mat::col([0.62, 0.47, 0.18]);
+    let side = v3(0.98, 0.0, -0.17);
+    for (a, h) in [(0.0f32, 0.12f32), (0.88, 0.12)] {
+        let p0 = hinge + dir * a + v3(0.0, -0.87, 0.0);
+        open.quad([p0, p0 + dir * h, p0 + dir * h + v3(0.0, 1.74, 0.0), p0 + v3(0.0, 1.74, 0.0)], [[0.0; 2]; 4], &gilt.two(), side);
+    }
+    for yy in [-0.87f32, 0.75] {
+        let p0 = hinge + v3(0.0, yy, 0.0);
+        open.quad([p0, p0 + dir, p0 + dir + v3(0.0, 0.12, 0.0), p0 + v3(0.0, 0.12, 0.0)], [[0.0; 2]; 4], &gilt.two(), side);
+    }
     // Machine à écrire au centre du mur nord.
     b.table(-0.6, 25.15, 0.6, 26.0, 0.8, Mat::tex(T_WOOD, [0.6, 0.45, 0.35]), false);
     let metal = Mat::tex(T_METAL, [0.35, 0.33, 0.3]);
@@ -108,12 +115,12 @@ pub fn gallery() -> Room {
     b.moon_spill(v3(7.7, 2.0, 20.4), 4.0);
     let cameras = vec![
         // Le long du mur sud (portes, escalier) : vus depuis le nord.
-        cam((-BIG, -BIG), (0.0, 22.0), v3(3.5, 3.3, 25.7), v3(-6.0, 0.3, 20.2), 64.0),
-        cam((0.0, -BIG), (BIG, 22.0), v3(-3.5, 3.3, 25.7), v3(6.0, 0.3, 20.2), 64.0),
+        cam((-BIG, -BIG), (0.0, 22.0), v3(3.5, 3.4, 24.9), v3(-6.0, 0.3, 20.2), 64.0),
+        cam((0.0, -BIG), (BIG, 22.0), v3(-3.5, 3.4, 24.9), v3(6.0, 0.3, 20.2), 64.0),
         // Le long des portraits : vus depuis le sud.
-        cam((-BIG, 22.0), (-3.3, BIG), v3(-0.8, 3.3, 20.3), v3(-9.0, 0.6, 24.8), 64.0),
-        cam((-3.3, 22.0), (3.3, BIG), v3(-6.5, 3.3, 20.3), v3(2.5, 0.6, 25.6), 64.0),
-        cam((3.3, 22.0), (BIG, BIG), v3(0.8, 3.3, 20.3), v3(9.0, 0.6, 24.8), 64.0),
+        cam((-BIG, 22.0), (-3.3, BIG), v3(-0.8, 3.4, 21.0), v3(-9.0, 0.6, 24.8), 64.0),
+        cam((-3.3, 22.0), (3.3, BIG), v3(-6.5, 3.4, 21.0), v3(2.5, 0.6, 25.6), 64.0),
+        cam((3.3, 22.0), (BIG, BIG), v3(0.8, 3.4, 21.0), v3(9.0, 0.6, 24.8), 64.0),
     ];
     let doors = vec![
         door(v3(4.8, 0.0, 20.0), v3(0.0, 0.0, 1.0), ROOM_LIBRARY, v3(4.75, 0.0, 20.5), PI, None).stairs(false),
@@ -126,7 +133,35 @@ pub fn gallery() -> Room {
     r.level = UPPER;
     r.cond.push(CondMesh { flag: F_PORTRAITS, when: false, mesh: closed });
     r.cond.push(CondMesh { flag: F_PORTRAITS, when: true, mesh: open });
+    r.portraits = portraits;
     r
+}
+
+/// Portrait de famille de la galerie (toile 1 x 1,5 m sur le mur nord) :
+/// cadre doré en relief et plaque de laiton, qui luit quand le cadre est
+/// enfoncé dans le mur.
+fn family_portrait(c: Vec3, tex: i16, pressed: bool) -> Mesh {
+    let mut m = Mesh::new();
+    let n = v3(0.0, 0.0, -1.0);
+    let depth = if pressed { 0.0 } else { 0.07 };
+    let z = c.z - 0.02 - depth;
+    let (hw, hh) = (0.5f32, 0.75f32);
+    let canvas = Mat::tex(tex, [1.0, 1.0, 1.0]);
+    let q = |x: f32, y: f32| v3(c.x + x, c.y + y, z);
+    m.quad([q(hw, -hh), q(-hw, -hh), q(-hw, hh), q(hw, hh)], [[0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]], &canvas, n);
+    // Moulure : quatre baguettes en relief autour de la toile.
+    let gilt = Mat::col([0.62, 0.47, 0.18]);
+    let (f, d) = (0.12f32, 0.05f32);
+    let zf = z - d;
+    m.cube(v3(c.x - hw - f, c.y - hh - f, zf), v3(c.x + hw + f, c.y - hh, z + 0.01), &gilt, 1.0);
+    m.cube(v3(c.x - hw - f, c.y + hh, zf), v3(c.x + hw + f, c.y + hh + f, z + 0.01), &gilt, 1.0);
+    m.cube(v3(c.x - hw - f, c.y - hh, zf), v3(c.x - hw, c.y + hh, z + 0.01), &gilt, 1.0);
+    m.cube(v3(c.x + hw, c.y - hh, zf), v3(c.x + hw + f, c.y + hh, z + 0.01), &gilt, 1.0);
+    // Plaque gravée sous le cadre, sur le mur (elle ne bouge pas).
+    let plate = if pressed { Mat::col([1.0, 0.82, 0.4]).glow(1.0) } else { Mat::col([0.5, 0.4, 0.2]) };
+    let py = c.y - hh - f - 0.12;
+    m.cube(v3(c.x - 0.22, py - 0.07, c.z - 0.02), v3(c.x + 0.22, py + 0.07, c.z), &plate, 1.0);
+    m
 }
 
 pub fn bedroom() -> Room {
@@ -401,7 +436,7 @@ pub fn items() -> Vec<ItemSpawn> {
     use ItemKind::*;
     vec![
         item(ROOM_GALLERY, v3(-5.4, 0.85, 20.3), Ammo(15)),
-        ItemSpawn { flag: Some(F_PORTRAITS), ..item(ROOM_GALLERY, v3(7.5, 0.92, 25.82), Key(KEY_LAB)) },
+        ItemSpawn { flag: Some(F_PORTRAITS), ..item(ROOM_GALLERY, v3(7.5, 1.42, 25.82), Key(KEY_LAB)) },
         item(ROOM_BEDROOM, v3(-19.75, 1.85, 23.0), Shotgun),
         item(ROOM_BEDROOM, v3(-15.55, 0.6, 27.45), Shells(5)),
         item(ROOM_BEDROOM, v3(-17.0, 0.0, 18.5), Medkit),

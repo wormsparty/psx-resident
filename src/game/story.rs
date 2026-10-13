@@ -313,16 +313,21 @@ impl Game {
             }
             return;
         }
-        self.message("Le cadre semble mobile. Vous l'enfoncez dans le mur...");
+        if id < self.st.puzzle {
+            self.message("Le cadre est déjà enfoncé dans le mur. Sa plaque de laiton luit doucement.");
+            return;
+        }
+        self.message("Le lourd cadre doré est monté sur un ressort. Vous l'enfoncez dans le mur...");
         self.play(Sfx::Reload, 0.5, 0.0, 0.6);
+        // Ordre des morts : Alice, Brutus, Eleanor... et le Docteur en dernier.
         if id == self.st.puzzle {
             self.st.puzzle += 1;
-            if self.st.puzzle >= 3 {
+            if self.st.puzzle >= 4 {
                 self.set_flag(F_PORTRAITS);
                 self.play(Sfx::Creak, 0.7, 0.4, 0.8);
-                self.message("Un déclic sourd. Le portrait du Docteur pivote lentement sur ses gonds. Une niche apparaît derrière.");
+                self.message("Un déclic sourd. Le portrait du Docteur pivote lentement sur ses gonds et révèle une niche.");
             } else {
-                self.message("Le cadre reste enfoncé avec un léger déclic.");
+                self.message("Le cadre reste enfoncé avec un léger déclic. Sa plaque s'allume.");
             }
         } else {
             self.st.puzzle = 0;

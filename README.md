@@ -23,7 +23,7 @@ Un niveau complet, du hall du manoir jusqu'au marais sous la pleine lune.
   - **dehors** : **le parc** devant la façade du manoir, puis **le marais** jusqu'au ponton.
 - Transitions animées : porte qui s'ouvre, **escalier** qu'on gravit ou descend, **grille du parc**.
 - Par les fenêtres : ciel étoilé, **lune**, **montagnes**, marais brumeux avec roseaux, arbres morts, grille en fer forgé et lucioles (vus de plus haut depuis l'étage). Dehors, le même paysage devient jouable : chemin de terre, eau où l'on patauge (plus lentement), ponton.
-- **Armes** : pistolet 9 mm (chargeur de 15), **fusil à pompe** (6 cartouches, dévastateur de près, inutile de loin) et **couteau** (silencieux, inusable : il y a toujours un moyen de s'en sortir). On change d'arme dans l'inventaire.
+- **Armes** : pistolet 9 mm (chargeur de 15), **fusil à pompe** (6 cartouches, dévastateur de près, inutile de loin) et **couteau** (silencieux, inusable : il y a toujours un moyen de s'en sortir). On change d'arme dans l'inventaire. Les dégâts sont fixes : un zombie tombe en **5 balles** de pistolet (ou 5 coups de couteau).
 - **Soins** : trousses (santé complète) et **herbes médicinales** (+35).
 - **Ennemis** : zombies (certains dévorent un cadavre, d'autres font les morts et se relèvent), **chiens du marais** qui contournent leur proie et bondissent.
 - **Trois boss**, aux attaques télégraphiées et esquivables :
@@ -31,7 +31,7 @@ Un niveau complet, du hall du manoir jusqu'au marais sous la pleine lune.
   - **l'Abomination**, le Docteur Ashcroft fondu dans près de quatre mètres de chair, dans la crypte : griffe, lame d'os, écrasement à deux bras, et des rugissements qui **découvrent son cœur** (dégâts triplés). Plus rapide à mi-vie. Il porte la clé de la porte d'entrée ;
   - **le Molosse**, chef de meute géant, qui garde le ponton.
 - Cinématiques d'apparition des boss (passables), barre de vie et musique de combat.
-- **Énigme** des portraits de la galerie, documents à lire (journaux, lettres, notes), une **boîte à musique**.
+- **Énigme** des portraits de la galerie (lourds cadres dorés à plaque de laiton, qui s'enfoncent dans le mur), documents à lire (journaux, lettres, notes), une **boîte à musique**.
 - Un PNJ : **Edgar**, le vieux majordome blessé, réfugié dans la cuisine. Il aide... tant qu'il est en vie.
 - **Économie serrée** : de quoi venir à bout de tout, à condition de ne pas gaspiller ; éviter les zombies est souvent plus sage.
 - Trois **machines à écrire** (hall, galerie, escalier de la crypte). Le checkpoint est **conservé sur disque** et se reprend avec « Continuer ». En cas de mort, la partie reprend à la dernière sauvegarde.
@@ -41,7 +41,7 @@ Un niveau complet, du hall du manoir jusqu'au marais sous la pleine lune.
 ### Déroulement (attention, révélations)
 
 1. Bureau : la **clé au blason** ouvre la bibliothèque, dont l'escalier mène à l'étage.
-2. Les documents (chambre des maîtres, chambre d'Alice, boîte à musique) donnent l'ordre des portraits : **Alice, Brutus, Eleanor**. Le portrait du Docteur pivote et révèle la **clé au corbeau**.
+2. Les documents (chambre des maîtres, chambre d'Alice, boîte à musique) donnent l'ordre des portraits : **Alice, Brutus, Eleanor**, puis **le Docteur** (« le tien en dernier »). Son portrait pivote et révèle la **clé au corbeau**.
 3. Chambre des maîtres : le **fusil à pompe**, au-dessus de la cheminée.
 4. Laboratoire : la **clé de la crypte**... qui réveille le Sujet 7. Edgar ne survit pas à la nuit.
 5. Cuisine, escalier de la crypte, puis la crypte : l'Abomination. La **clé du manoir** tombe dans la fosse.
@@ -75,7 +75,7 @@ Emplacement des données :
 |-------------|-----------------------------|--------------------|
 | Se déplacer | WASD (ZQSD en AZERTY), flèches | Stick gauche / croix |
 | Courir      | Maj                         | Stick à fond ou B  |
-| Viser       | Clic droit (suit la souris) ou Ctrl | LT (ou LB)   |
+| Viser       | Clic droit (vise sous le curseur) ou Ctrl | LT (ou LB) |
 | Tirer / frapper | Clic gauche, Espace ou F | RT (ou RB)         |
 | Recharger   | R                           | X                  |
 | Action / ramasser / ouvrir | E ou Entrée  | A                  |
@@ -83,7 +83,7 @@ Emplacement des données :
 | Pause       | Échap ou P                  | Menu (Start)       |
 
 Les touches sont **physiques** : sur un clavier AZERTY, ZQSD tombe donc à la place de WASD.
-En visant au clavier, A et D font pivoter l'héroïne. À la manette, le stick oriente directement la visée.
+En visant à la souris, l'héroïne vise ce qui est sous le curseur ; un ennemi survolé est verrouillé. Au clavier (Ctrl) et à la manette, la visée se verrouille sur l'ennemi le plus proche devant soi ; A et D (ou le stick) permettent de viser ailleurs. L'ennemi verrouillé est encadré de rouge.
 
 ## Lancer en natif
 

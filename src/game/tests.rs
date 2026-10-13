@@ -221,15 +221,20 @@ fn portrait_puzzle_reveals_lab_key() {
     g.press_portrait(2);
     dismiss(&mut g);
     assert_eq!(g.st.puzzle, 0);
-    // Alice, Brutus, Eleanor.
+    // Alice, Brutus, Eleanor, puis le Docteur.
     g.press_portrait(0);
     g.press_portrait(1);
     assert!(!g.flag(F_PORTRAITS));
     g.press_portrait(3);
-    assert_eq!(g.st.puzzle, 0, "le Docteur réarme le mécanisme");
+    assert_eq!(g.st.puzzle, 0, "le Docteur trop tôt réarme le mécanisme");
     for id in [0, 1, 2] {
         g.press_portrait(id);
     }
+    // Un cadre déjà enfoncé ne réarme rien.
+    g.press_portrait(1);
+    assert_eq!(g.st.puzzle, 3);
+    assert!(!g.flag(F_PORTRAITS));
+    g.press_portrait(3);
     dismiss(&mut g);
     assert!(g.flag(F_PORTRAITS));
     assert!(g.item_visible(lab_key));
@@ -272,7 +277,7 @@ fn brute_charge_knocks_down() {
         e.alerted = true;
     }
     run(&mut g, Input::default(), 2.0);
-    assert!(g.st.player.hp <= 76, "hp = {}", g.st.player.hp);
+    assert!(g.st.player.hp <= 80, "hp = {}", g.st.player.hp);
     // Projetée au sol puis relevée.
     run(&mut g, Input::default(), 2.0);
     assert_eq!(g.st.player.knock, 0.0);
@@ -539,4 +544,62 @@ fn death_reloads_checkpoint() {
     assert_eq!(g.st.player.hp, 100);
     assert_eq!(g.st.inv.mag, 12);
     assert!(g.st.player.pos.dist_xz(v3(-4.6, 0.0, 10.5)) < 0.5);
+}
+
+#[test]
+fn dog_goes_around_obstacles() {
+    // La cabane du passeur, longue de 6 m contre le bord du marais, sépare
+    // le chien de la joueuse : il doit la contourner, quel que soit son flanc.
+    for variant in [0, 1] {
+        let mut g = start();
+        let player = v3(8.2, 0.0, -27.6);
+        g.enter_room(ROOM_MARSH, player, 0.0);
+        g.mode = Mode::Play;
+        let dog = g.st.enemies.iter().position(|e| e.kind == EnemyKind::Dog && e.room == ROOM_MARSH).unwrap();
+        for (i, e) in g.st.enemies.iter_mut().enumerate() {
+            if e.room == ROOM_MARSH && i != dog {
+                e.room = NOWHERE;
+            }
+        }
+        let e = &mut g.st.enemies[dog];
+        e.pos = v3(8.2, 0.0, -18.8);
+        e.yaw = PI;
+        e.variant = variant;
+        e.state = ZState::Chase;
+        e.alerted = true;
+        let hp = g.st.player.hp;
+        let mut reached = false;
+        for _ in 0..(8.0 / DT) as usize {
+            g.st.player.pos = v3(player.x, g.st.player.pos.y, player.z);
+            g.frame(DT, &Input::default());
+            if g.st.player.hp < hp || g.st.enemies[dog].pos.dist_xz(player) < 1.2 {
+                reached = true;
+                break;
+            }
+        }
+        assert!(reached, "le chien {variant} reste coincé en {:?}", g.st.enemies[dog].pos);
+    }
+}
+
+#[test]
+fn mouse_aim_locks_enemy_under_cursor() {
+    let mut g = start();
+    g.enter_room(ROOM_CORRIDOR, v3(7.5, 0.0, 9.0), 0.0);
+    let zi = g.st.enemies.iter().position(|z| z.room == ROOM_CORRIDOR).unwrap();
+    g.st.enemies[zi].pos = v3(8.2, 0.0, 13.0);
+    g.st.enemies[zi].state = ZState::Idle;
+    g.frame(DT, &Input::default());
+    // Curseur sur le torse du zombie, la joueuse regardant ailleurs.
+    let (sx, sy, _) = g.cam.project(g.st.enemies[zi].pos + v3(0.0, 1.2, 0.0)).unwrap();
+    g.st.player.yaw = 1.2;
+    let aim = Input { aim: true, aim_mouse: true, mouse: Some((sx, sy)), ..Default::default() };
+    // Clic dès le début de la visée : le tir part quand l'arme est levée.
+    g.frame(DT, &Input { fire: true, ..aim });
+    assert_eq!(g.st.player.lock, Some(zi));
+    let hp0 = g.st.enemies[zi].hp;
+    run(&mut g, aim, 0.3);
+    assert_eq!(g.st.enemies[zi].hp, hp0 - 1, "le tir mis en attente touche la cible");
+    // Curseur loin de tout ennemi : plus de verrouillage.
+    run(&mut g, Input { mouse: Some((5.0, 230.0)), ..aim }, 0.1);
+    assert_eq!(g.st.player.lock, None);
 }

@@ -4,6 +4,11 @@
 
 use super::*;
 
+/// Sujet 7 : durée du coup de griffe, de l'armé de la charge, vitesse de charge.
+pub(super) const BRUTE_SLASH_TIME: f32 = 1.35;
+pub(super) const BRUTE_WINDUP: f32 = 0.9;
+const BRUTE_CHARGE_SPEED: f32 = 5.0;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum ZState {
     Eating,
@@ -53,14 +58,18 @@ pub(super) struct Enemy {
     /// Délai avant le prochain rugissement / la prochaine charge.
     pub roar_t: f32,
     pub from_lying: bool,
+    /// Contournement d'un obstacle : côté choisi (signe) et durée restante.
+    pub detour: f32,
 }
 
 impl Enemy {
     pub fn spawn(i: usize, s: &EnemySpawn) -> Enemy {
         let hp = match s.kind {
-            EnemyKind::Zombie => 4 + (i as i32 % 3) + if s.look == 3 { 3 } else { 0 },
+            // Tous les zombies encaissent le même nombre de balles (Edgar, plus
+            // costaud, se reconnaît à sa livrée).
+            EnemyKind::Zombie => if s.look == 3 { 8 } else { 5 },
             EnemyKind::Dog => 3,
-            EnemyKind::Brute => 30,
+            EnemyKind::Brute => 26,
             EnemyKind::Boss => 66,
             EnemyKind::Hound => 24,
         };
@@ -92,6 +101,7 @@ impl Enemy {
             poise: 0,
             roar_t: 9.0,
             from_lying: false,
+            detour: 0.0,
         }
     }
 
@@ -164,6 +174,11 @@ impl Enemy {
         self.hp * 2 < self.max_hp
     }
 
+    /// Accélération du Sujet 7 à mi-vie.
+    pub fn brute_rage(&self) -> f32 {
+        if self.enraged() { 1.15 } else { 1.0 }
+    }
+
     pub fn die(&mut self, fall_back: bool) {
         self.state = ZState::Dying;
         self.t = 0.0;
@@ -197,7 +212,7 @@ impl Enemy {
             _ => {
                 self.poise += dmg;
                 let threshold = match self.kind {
-                    EnemyKind::Brute => 7,
+                    EnemyKind::Brute => 6,
                     EnemyKind::Boss => 12,
                     _ => 6,
                 };
@@ -270,9 +285,9 @@ impl Game {
                 }
                 z.pos = room.collide(pos, z.radius());
                 // Charge du Sujet 7 stoppée net par un mur : il reste sonné.
-                if z.kind == EnemyKind::Brute && z.state == ZState::Charge && z.t > 0.7 {
+                if z.kind == EnemyKind::Brute && z.state == ZState::Charge && z.t > BRUTE_WINDUP {
                     let moved = z.pos.dist_xz(before);
-                    if moved < 5.5 * dt * 0.4 {
+                    if moved < BRUTE_CHARGE_SPEED * dt * 0.4 {
                         z.state = ZState::Stagger;
                         z.t = 0.0;
                         z.atk = 1;
@@ -442,6 +457,50 @@ impl Game {
     }
 
     /// Chiens du marais et Molosse (`hound`) : course, bond, morsure.
+    /// Le chemin droit de `from` dans la direction `yaw` est-il libre sur
+    /// `len` mètres pour un corps de rayon `r` ?
+    fn path_clear(&self, from: Vec3, yaw: f32, len: f32, r: f32) -> bool {
+        let room = self.room();
+        let dir = Vec3::from_yaw(yaw);
+        (1..=4).all(|k| {
+            let p = from + dir * (len * k as f32 / 4.0);
+            if p.x < room.min.0 + r || p.x > room.max.0 - r || p.z < room.min.1 + r || p.z > room.max.1 - r {
+                return false;
+            }
+            room.obstacles.iter().all(|o| {
+                let (cx, cz) = (p.x.clamp(o.min.0, o.max.0), p.z.clamp(o.min.1, o.max.1));
+                (p.x - cx).powi(2) + (p.z - cz).powi(2) >= r * r
+            })
+        })
+    }
+
+    /// Direction à prendre pour aller vers `desired` sans buter contre le
+    /// décor : on longe l'obstacle du même côté tant qu'il gêne.
+    fn steer(&self, z: &mut Enemy, desired: f32, dist: f32, dt: f32) -> f32 {
+        let r = z.radius() + 0.05;
+        let look = dist.min(1.6);
+        z.detour = if z.detour > 0.0 { (z.detour - dt).max(0.0) } else { (z.detour + dt).min(0.0) };
+        if look < 0.4 || self.path_clear(z.pos, desired, look, r) {
+            return desired;
+        }
+        let pick = |side: f32| (1..=8).map(|k| desired + side * k as f32 * 0.35).find(|&y| self.path_clear(z.pos, y, look, r));
+        let side = if z.detour != 0.0 {
+            z.detour.signum()
+        } else {
+            // Côté le plus court, sinon celui du flanc habituel.
+            let steps = |side: f32| (1..=8).position(|k| self.path_clear(z.pos, desired + side * k as f32 * 0.35, look, r)).unwrap_or(99);
+            let (l, rr) = (steps(1.0), steps(-1.0));
+            if l < rr || (l == rr && z.variant % 2 == 0) { 1.0 } else { -1.0 }
+        };
+        match pick(side).map(|y| (y, side)).or_else(|| pick(-side).map(|y| (y, -side))) {
+            Some((y, s)) => {
+                z.detour = s * 0.8;
+                y
+            }
+            None => desired,
+        }
+    }
+
     fn ai_dog(&mut self, z: &mut Enemy, dt: f32, acts: &mut Vec<Act>, hound: bool) {
         let (ppos, alive, free) = self.prey();
         let to_p = ppos - z.pos;
@@ -472,7 +531,9 @@ impl Game {
                 // Les chiens contournent un peu leur proie avant de bondir.
                 let flank = if z.variant % 2 == 0 { 0.6 } else { -0.6 };
                 let desired = to_p.yaw() + if dist > 3.5 && !hound { flank } else { 0.0 };
-                z.yaw = approach_angle(z.yaw, desired, if hound { 3.2 } else { 4.5 } * dt);
+                // Contourne meubles et arbres au lieu de s'y coller.
+                let desired = self.steer(z, desired, dist, dt);
+                z.yaw = approach_angle(z.yaw, desired, if hound { 3.2 } else { 5.5 } * dt);
                 let speed = if !alive {
                     0.0
                 } else if hound {
@@ -492,7 +553,9 @@ impl Game {
                     acts.push(Act::Sound(Sfx::Snarl, if hound { 0.9 } else { 0.6 }, pitch));
                 }
                 let reach = if hound { 4.6 } else { 2.8 };
-                if dist < reach && facing(z, 0.5) && z.attack_cd <= 0.0 && free {
+                // Pas de bond à travers un meuble.
+                let open = self.path_clear(z.pos, to_p.yaw(), (dist - 0.6).max(0.0), z.radius() * 0.8);
+                if dist < reach && facing(z, 0.5) && z.attack_cd <= 0.0 && free && open {
                     z.state = ZState::Leap;
                     z.t = 0.0;
                     z.bitten = false;
@@ -572,11 +635,11 @@ impl Game {
         let to_p = ppos - z.pos;
         let dist = to_p.flat().len();
         let ang = wrap_angle(to_p.yaw() - z.yaw).abs();
-        let rage = if z.enraged() { 1.25 } else { 1.0 };
+        let rage = z.brute_rage();
         match z.state {
             ZState::Chase => {
-                z.yaw = approach_angle(z.yaw, to_p.yaw(), 2.6 * rage * dt);
-                let speed = if alive { 1.5 * rage } else { 0.0 };
+                z.yaw = approach_angle(z.yaw, to_p.yaw(), 2.3 * rage * dt);
+                let speed = if alive { 1.3 * rage } else { 0.0 };
                 let old = z.phase;
                 z.phase += dt * speed * 2.6;
                 z.pos += Vec3::from_yaw(z.yaw) * (speed * dt);
@@ -593,12 +656,12 @@ impl Game {
                     z.state = ZState::Charge;
                     z.t = 0.0;
                     z.bitten = false;
-                    z.roar_t = self.rng.range(5.0, 8.0);
+                    z.roar_t = self.rng.range(7.0, 10.0);
                     acts.push(Act::Sound(Sfx::Brute, 1.0, 1.0));
                 }
             }
             ZState::Attack => {
-                let s = z.t * rage / 1.15;
+                let s = z.t * rage / BRUTE_SLASH_TIME;
                 if s < 0.45 {
                     z.yaw = approach_angle(z.yaw, to_p.yaw(), 2.0 * dt);
                 }
@@ -606,28 +669,28 @@ impl Game {
                     z.bitten = true;
                     acts.push(Act::Sound(Sfx::Slash, 0.9, 0.7));
                     if dist < 2.4 && ang < 0.9 {
-                        acts.push(Act::Hurt(26, true));
+                        acts.push(Act::Hurt(22, true));
                     }
                 }
                 if s >= 1.0 {
                     z.state = ZState::Chase;
-                    z.attack_cd = 0.8;
+                    z.attack_cd = 1.3;
                 }
             }
             ZState::Charge => {
-                if z.t < 0.7 {
+                if z.t < BRUTE_WINDUP {
                     // Il gratte le sol, tête baissée : c'est le moment d'esquiver.
-                    z.yaw = approach_angle(z.yaw, to_p.yaw(), 3.0 * dt);
+                    z.yaw = approach_angle(z.yaw, to_p.yaw(), 2.6 * dt);
                 } else {
                     let old = z.phase;
                     z.phase += dt * 15.0;
-                    z.pos += Vec3::from_yaw(z.yaw) * (5.5 * dt);
+                    z.pos += Vec3::from_yaw(z.yaw) * (BRUTE_CHARGE_SPEED * dt);
                     if (old / PI).floor() != (z.phase / PI).floor() {
                         acts.push(Act::Sound(Sfx::Step, 1.0, 0.5));
                     }
                     if !z.bitten && dist < 1.15 {
                         z.bitten = true;
-                        acts.push(Act::Hurt(24, true));
+                        acts.push(Act::Hurt(20, true));
                         z.state = ZState::Recover;
                         z.t = 0.0;
                     } else if z.t > 2.1 {
@@ -637,9 +700,9 @@ impl Game {
                 }
             }
             ZState::Recover => {
-                if z.t > 0.8 {
+                if z.t > 1.2 {
                     z.state = ZState::Chase;
-                    z.attack_cd = 1.0;
+                    z.attack_cd = 1.4;
                 }
             }
             ZState::Stagger => {

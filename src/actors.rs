@@ -630,10 +630,15 @@ pub struct DogBody {
     pub torso: Mesh,
     pub head: Mesh,
     pub jaw: Mesh,
-    pub upper_leg: Mesh,
-    pub lower_leg: Mesh,
+    /// Pattes en trois segments, de l'épaule (ou de la hanche) au pied.
+    pub front: [Mesh; 3],
+    pub hind: [Mesh; 3],
     pub tail: Mesh,
 }
+
+/// Longueur des segments de patte (avant, arrière).
+const FRONT_LEG: [f32; 3] = [0.18, 0.24, 0.11];
+const HIND_LEG: [f32; 3] = [0.22, 0.2, 0.16];
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DogPose {
@@ -659,10 +664,18 @@ pub fn dog(hound: bool) -> DogBody {
     let eye = Mat::col(if hound { [1.0, 0.15, 0.05] } else { [0.95, 0.75, 0.15] }).glow(2.0);
     let rot = Mat4::rot_x(std::f32::consts::FRAC_PI_2);
     // Torse le long de +z (prisme sur y, couché par rotation).
+    // Après rotation, la profondeur du prisme devient la hauteur (vers le bas) :
+    // croupe, ventre rentré, poitrail profond qui descend entre les pattes avant.
     let mut t = Mesh::new();
-    t.prism(-0.48, 0.5, (0.28, 0.3), (0.34, 0.4), (0.0, 0.02), 8, &fur, true);
+    t.prism(-0.5, -0.18, (0.2, 0.22), (0.24, 0.26), (0.0, -0.02), 8, &fur, true);
+    t.prism(-0.18, 0.12, (0.24, 0.26), (0.28, 0.32), (-0.02, 0.02), 8, &fur, false);
+    t.prism(0.12, 0.5, (0.28, 0.32), (0.3, 0.42), (0.02, 0.06), 8, &fur, true);
     let mut torso = Mesh::new();
-    torso.append(&t, &(Mat4::translate(v3(0.0, 0.58, 0.0)) * rot));
+    torso.append(&t, &(Mat4::translate(v3(0.0, 0.6, 0.0)) * rot));
+    // Cou épais, tendu vers l'avant et le haut jusqu'à la nuque.
+    let mut neck = Mesh::new();
+    neck.prism(0.0, 0.24, (0.2, 0.22), (0.14, 0.16), (0.0, 0.0), 6, &fur, false);
+    torso.append(&neck, &(Mat4::translate(v3(0.0, 0.58, 0.36)) * Mat4::rot_x(0.85)));
     if hound {
         // Vertèbres saillantes sur l'échine.
         let bone = Mat::col([0.75, 0.7, 0.58]);
@@ -692,15 +705,30 @@ pub fn dog(hound: bool) -> DogBody {
     for x in [-0.035f32, 0.035] {
         jaw.block(v3(x - 0.008, 0.0, 0.13), v3(x + 0.008, 0.05, 0.15), &tooth);
     }
-    let mut upper_leg = Mesh::new();
-    upper_leg.prism(-0.3, 0.04, (0.07, 0.09), (0.11, 0.15), (0.0, 0.0), 6, &fur, true);
-    let mut lower_leg = Mesh::new();
-    lower_leg.prism(-0.28, 0.0, (0.045, 0.05), (0.06, 0.07), (0.0, 0.0), 6, &fur, false);
-    lower_leg.block(v3(-0.035, -0.31, -0.02), v3(0.035, -0.26, 0.08), &dark);
+    // Avant : bras musclé, avant-bras fin, métacarpe et patte.
+    let seg = |len: f32, bot: (f32, f32), top: (f32, f32), caps: bool| {
+        let mut m = Mesh::new();
+        m.prism(-len, 0.03, bot, top, (0.0, 0.0), 6, &fur, caps);
+        m
+    };
+    let mut front = [
+        seg(FRONT_LEG[0], (0.06, 0.07), (0.1, 0.15), true),
+        seg(FRONT_LEG[1], (0.04, 0.045), (0.055, 0.065), false),
+        seg(FRONT_LEG[2], (0.035, 0.04), (0.04, 0.045), false),
+    ];
+    // Arrière : cuisse épaisse, jambe, jarret et canon.
+    let mut hind = [
+        seg(HIND_LEG[0], (0.07, 0.08), (0.11, 0.17), true),
+        seg(HIND_LEG[1], (0.04, 0.045), (0.065, 0.08), false),
+        seg(HIND_LEG[2], (0.035, 0.04), (0.04, 0.05), false),
+    ];
+    for (m, len) in [(&mut front[2], FRONT_LEG[2]), (&mut hind[2], HIND_LEG[2])] {
+        m.block(v3(-0.036, -len - 0.035, -0.03), v3(0.036, -len + 0.005, 0.075), &dark);
+    }
     let mut tl = Mesh::new();
     tl.prism(-0.38, 0.0, (0.02, 0.02), (0.06, 0.06), (0.0, 0.0), 5, &fur, false);
     let tail = tl;
-    DogBody { torso, head, jaw, upper_leg, lower_leg, tail }
+    DogBody { torso, head, jaw, front, hind, tail }
 }
 
 pub fn draw_dog(r: &mut Raster, b: &DogBody, pose: &DogPose, pos: Vec3, yaw: f32, scale: f32, light: &Lighting) {
@@ -716,18 +744,29 @@ pub fn draw_dog(r: &mut Raster, b: &DogBody, pose: &DogPose, pos: Vec3, yaw: f32
     r.draw_mesh(&b.head, &neck, Some(light));
     let jaw = neck * Mat4::translate(v3(0.0, -0.06, 0.2)) * Mat4::rot_x(p.jaw * 0.7);
     r.draw_mesh(&b.jaw, &jaw, Some(light));
-    // Pattes : avant (z +) et arrière (z -), galop décalé.
-    let legs = [(-0.1f32, 0.36f32, 0.0f32), (0.1, 0.36, 0.35), (-0.1, -0.38, 3.3), (0.1, -0.38, 3.65)];
+    // Pattes : avant (z +) et arrière (z -), galop décalé. Angles autour de
+    // x : positif = vers l'arrière. Au repos, la patte arrière dessine un Z
+    // (cuisse vers l'avant, jambe vers l'arrière, canon presque vertical) et
+    // la patte avant descend du coude, droite jusqu'au métacarpe.
+    let legs = [(-0.1f32, 0.34f32, 0.0f32), (0.1, 0.34, 0.35), (-0.1, -0.36, 3.3), (0.1, -0.36, 3.65)];
     for (i, &(x, z, off)) in legs.iter().enumerate() {
-        let s = (p.phase + off).sin();
         let front = i < 2;
+        let s = (p.phase + off).sin();
         let amp = 0.25 + 0.4 * p.gait;
-        let swing = s * amp * p.gait.min(1.0) + if p.dead > 0.0 { p.dead * if front { 0.6 } else { -0.5 } } else { 0.0 };
-        let knee = ((p.phase + off + 1.2).sin().max(0.0) * 0.9 * p.gait + p.crouch * 0.9) * if front { -1.0 } else { 1.0 };
-        let hip = root * Mat4::translate(v3(x, 0.56, z)) * Mat4::rot_x(-swing + if front { 0.0 } else { p.crouch * 0.6 });
-        r.draw_mesh(&b.upper_leg, &hip, Some(light));
-        let low = hip * Mat4::translate(v3(0.0, -0.28, 0.0)) * Mat4::rot_x(knee * 0.8 + if front { 0.15 } else { -0.25 });
-        r.draw_mesh(&b.lower_leg, &low, Some(light));
+        let swing = s * amp * p.gait.min(1.0) + p.dead * if front { 0.6 } else { -0.5 };
+        // Repli de la patte pendant qu'elle revient vers l'avant, en l'air.
+        let flex = (p.phase + off + 1.2).sin().max(0.0) * p.gait.min(1.0) + p.crouch;
+        let (meshes, lens, angles) = if front {
+            (&b.front, FRONT_LEG, [0.35 - swing + p.crouch * 0.4, -0.45 + flex * 0.9 - p.crouch * 0.6, 0.2 + flex * 0.4])
+        } else {
+            (&b.hind, HIND_LEG, [-0.45 - swing - p.crouch * 0.5, 1.1 + flex * 0.5 + p.crouch * 0.4, -0.75 - flex * 0.3 - p.crouch * 0.2])
+        };
+        let mut m = root * Mat4::translate(v3(x, 0.56, z));
+        for k in 0..3 {
+            m = m * Mat4::rot_x(angles[k]);
+            r.draw_mesh(&meshes[k], &m, Some(light));
+            m = m * Mat4::translate(v3(0.0, -lens[k], 0.0));
+        }
     }
     let wag = (p.phase * 0.5).sin() * 0.3;
     let tail = root * Mat4::translate(v3(0.0, 0.66, -0.48)) * Mat4::rot_x(-2.2 + p.gait * 0.6) * Mat4::rot_z(wag);

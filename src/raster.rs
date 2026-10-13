@@ -166,6 +166,9 @@ struct RV {
 struct SV {
     x: f64,
     y: f64,
+    /// Position exacte, avant snapping (sert à la profondeur).
+    ex: f64,
+    ey: f64,
     iz: f32,
     u: f32,
     v: f32,
@@ -398,9 +401,13 @@ impl Raster {
             let r = &poly[i];
             let iz = 1.0 / r.p.z;
             // Snapping des sommets sur la grille entière : le "jitter" PS1.
+            let ex = (hw + r.p.x * iz * focal) as f64;
+            let ey = (hh - r.p.y * iz * focal) as f64;
             s[i] = SV {
-                x: ((hw + r.p.x * iz * focal) as f64).round(),
-                y: ((hh - r.p.y * iz * focal) as f64).round(),
+                x: ex.round(),
+                y: ey.round(),
+                ex,
+                ey,
                 iz,
                 u: r.u * tw,
                 v: r.v * th,
@@ -455,6 +462,20 @@ impl Raster {
         let e2 = -tol * len(v0, v1) * ia - 1e-7;
         // Décalques (tapis, sang, ombres) : léger biais de profondeur.
         let bias = if matches!(blend, Blend::Decal | Blend::Mul) { 1.008 } else { 1.0 };
+        // La profondeur suit le triangle exact, pas le triangle « snappé » :
+        // sinon le snapping déplace les surfaces en profondeur et un mur perce
+        // à travers ce qui est posé contre lui (rideaux, tableaux, appliques).
+        let earea = (v1.ex - v0.ex) * (v2.ey - v0.ey) - (v1.ey - v0.ey) * (v2.ex - v0.ex);
+        let plane = if earea.abs() > 0.25 {
+            let (d1, d2) = ((v1.iz - v0.iz) as f64, (v2.iz - v0.iz) as f64);
+            let dzdx = (d1 * (v2.ey - v0.ey) - d2 * (v1.ey - v0.ey)) / earea;
+            let dzdy = (d2 * (v1.ex - v0.ex) - d1 * (v2.ex - v0.ex)) / earea;
+            Some((dzdx, dzdy))
+        } else {
+            None
+        };
+        let zlo = v0.iz.min(v1.iz).min(v2.iz);
+        let zhi = v0.iz.max(v1.iz).max(v2.iz);
 
         for y in miny..=maxy {
             let (mut w0, mut w1, mut w2) = (w0r, w1r, w2r);
@@ -472,7 +493,13 @@ impl Raster {
                         (w0 as f32, w1 as f32, w2 as f32)
                     };
                     let i = yu * W + x as usize;
-                    let iz = a * v0.iz + b * v1.iz + c * v2.iz;
+                    let iz = match plane {
+                        Some((dx, dy)) => {
+                            let z = v0.iz as f64 + (x as f64 + 0.5 - v0.ex) * dx + (y as f64 + 0.5 - v0.ey) * dy;
+                            (z as f32).clamp(zlo, zhi)
+                        }
+                        None => a * v0.iz + b * v1.iz + c * v2.iz,
+                    };
                     if iz * bias > self.depth[i] {
                         let mut col = [
                             a * v0.c[0] + b * v1.c[0] + c * v2.c[0],
@@ -612,6 +639,14 @@ impl Raster {
             g[0] = 0x0C;
             g[1] = 0x12;
             return g;
+        }
+        match ch {
+            // Le ç d'origine a un corps écrasé sur 4 lignes : on reprend le c.
+            'ç' => return [0x00, 0x00, 0x1E, 0x33, 0x03, 0x33, 0x1E, 0x0C],
+            // Absent de la police (hors Latin-1).
+            'œ' => return [0x00, 0x00, 0x36, 0x49, 0x79, 0x09, 0x76, 0x00],
+            'Œ' => return [0x7E, 0x09, 0x09, 0x39, 0x09, 0x09, 0x7E, 0x00],
+            _ => {}
         }
         let code = ch as u32;
         if code < 128 {

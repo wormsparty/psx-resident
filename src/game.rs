@@ -23,6 +23,7 @@ mod story;
 
 use combat::Weapon;
 use enemies::{Enemy, ZState};
+use enemies::{BRUTE_SLASH_TIME, BRUTE_WINDUP};
 use story::Cine;
 
 const MAG_SIZE: u32 = 15;
@@ -156,6 +157,8 @@ pub struct Game {
     cam_changed: bool,
     particles: Vec<Particle>,
     muzzle: f32,
+    /// Tir demandé pendant que l'arme se lève : part dès qu'elle est prête.
+    fire_buf: f32,
     hurt_flash: f32,
     /// Secousse de caméra (pas du boss, impacts).
     shake: f32,
@@ -409,6 +412,7 @@ impl Game {
             cam_changed: false,
             particles: Vec::new(),
             muzzle: 0.0,
+            fire_buf: 0.0,
             hurt_flash: 0.0,
             shake: 0.0,
             msgs: VecDeque::new(),
@@ -611,6 +615,7 @@ impl Game {
         self.hurt_flash = (self.hurt_flash - dt * 1.5).max(0.0);
         self.banner_t = (self.banner_t - dt).max(0.0);
         self.muzzle = (self.muzzle - dt).max(0.0);
+        self.fire_buf = (self.fire_buf - dt).max(0.0);
         self.shake = (self.shake - dt * 2.0).max(0.0);
         self.pad = inp.using_pad;
         self.fps_acc.0 += dt;
@@ -817,23 +822,29 @@ impl Game {
                 p.speed = 0.0;
                 p.move_amt = (p.move_amt - dt * 6.0).max(0.0);
             }
-            if !was_aiming {
+            // Souris : on vise ce qui est sous le curseur (verrouillage si c'est
+            // un ennemi). Clavier et manette : verrouillage auto sur le plus proche.
+            if !was_aiming && !inp.aim_mouse {
                 self.st.player.lock = self.find_target();
             }
             let pyaw = self.st.player.yaw;
             let mut target_yaw: Option<(f32, f32)> = None;
             if inp.aim_mouse {
+                self.st.player.lock = None;
                 if let Some((sx, sy)) = inp.mouse {
-                    let ray = self.cam.ray(sx, sy);
-                    let plane = 1.0 + self.st.player.pos.y;
-                    if ray.y.abs() > 1e-3 {
-                        let t = (plane - self.cam.eye.y) / ray.y;
-                        if t > 0.0 {
-                            let hit = self.cam.eye + ray * t;
-                            let d = hit - self.st.player.pos;
-                            if d.flat().len() > 0.2 {
-                                target_yaw = Some((d.yaw(), 14.0));
-                                self.st.player.lock = None;
+                    if let Some(zi) = self.enemy_under_cursor(sx, sy) {
+                        self.st.player.lock = Some(zi);
+                    } else {
+                        let ray = self.cam.ray(sx, sy);
+                        let plane = 1.0 + self.st.player.pos.y;
+                        if ray.y.abs() > 1e-3 {
+                            let t = (plane - self.cam.eye.y) / ray.y;
+                            if t > 0.0 {
+                                let hit = self.cam.eye + ray * t;
+                                let d = hit - self.st.player.pos;
+                                if d.flat().len() > 0.2 {
+                                    target_yaw = Some((d.yaw(), 14.0));
+                                }
                             }
                         }
                     }
@@ -850,10 +861,10 @@ impl Game {
             if target_yaw.is_none() {
                 if let Some(zi) = self.st.player.lock {
                     if !self.st.enemies[zi].targetable(self.st.room) {
-                        self.st.player.lock = self.find_target();
+                        self.st.player.lock = if inp.aim_mouse { None } else { self.find_target() };
                     } else {
                         let tp = self.st.enemies[zi].pos;
-                        target_yaw = Some(((tp - self.st.player.pos).yaw(), 7.0));
+                        target_yaw = Some(((tp - self.st.player.pos).yaw(), if inp.aim_mouse { 14.0 } else { 7.0 }));
                     }
                 }
             }
@@ -861,7 +872,11 @@ impl Game {
                 let p = &mut self.st.player;
                 p.yaw = approach_angle(p.yaw, ty, rate * dt);
             }
-            if inp.fire && self.st.player.aim_t > 0.6 {
+            if inp.fire {
+                self.fire_buf = 0.3;
+            }
+            if self.fire_buf > 0.0 && self.st.player.aim_t > 0.6 && self.st.player.fire_cd <= 0.0 {
+                self.fire_buf = 0.0;
                 self.fire();
             }
         } else {
@@ -1127,6 +1142,20 @@ impl Game {
 
     fn update_inventory(&mut self, inp: &Input) {
         let slots = self.inv_slots();
+        // Souris : survoler une case la sélectionne, cliquer dessus l'utilise.
+        let mut hovered = None;
+        if let Some((mx, my)) = inp.mouse {
+            let (mx, my) = (mx as i32, my as i32);
+            hovered = self.menu_rows.iter().position(|&(x0, y0, x1, y1)| mx >= x0 && mx < x1 && my >= y0 && my < y1);
+            if let Some(h) = hovered {
+                let moved = self.last_mouse != inp.mouse;
+                if (moved || inp.click) && h != self.sel && h < slots.len() {
+                    self.sel = h;
+                    self.play(Sfx::Cursor, 0.25, 0.0, 1.0);
+                }
+            }
+        }
+        self.last_mouse = inp.mouse;
         if inp.up {
             self.sel = (self.sel + slots.len() - 1) % slots.len();
             self.play(Sfx::Cursor, 0.3, 0.0, 1.0);
@@ -1139,7 +1168,8 @@ impl Game {
             self.mode = Mode::Play;
             return;
         }
-        if inp.confirm || inp.interact {
+        // Un clic hors des cases ne fait rien.
+        if (inp.confirm || inp.interact) && (!inp.click || hovered.is_some_and(|h| h < slots.len())) {
             match slots[self.sel.min(slots.len() - 1)].0 {
                 Slot::Weapon(w) => {
                     if self.st.inv.weapon != w {

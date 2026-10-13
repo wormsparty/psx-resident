@@ -532,6 +532,9 @@ impl Game {
                 }
                 self.render_boss_bar();
                 let p = self.st.player.clone();
+                if p.aim_t > 0.5 && self.st.inv.weapon != Weapon::Knife {
+                    self.render_lock_marker();
+                }
                 if p.aim_t > 0.5 {
                     let inv = &self.st.inv;
                     let (loaded, spare, full) = match inv.weapon {
@@ -673,6 +676,29 @@ impl Game {
     }
 
     /// Barre de vie du boss affronté.
+    /// Coins rouges autour de l'ennemi verrouillé : on sait sur qui on tire.
+    fn render_lock_marker(&mut self) {
+        let Some(zi) = self.st.player.lock else { return };
+        let z = &self.st.enemies[zi];
+        if !z.targetable(self.st.room) {
+            return;
+        }
+        let foot = z.pos;
+        let head = z.pos + v3(0.0, z.hit_height() + 0.35, 0.0);
+        let (Some(a), Some(b)) = (self.cam.project(foot), self.cam.project(head)) else { return };
+        let half = (z.hit_radius() * self.cam.focal / a.2).max(5.0);
+        let (x0, x1) = ((a.0.min(b.0) - half) as i32, (a.0.max(b.0) + half) as i32);
+        let (y0, y1) = (b.1.min(a.1) as i32 - 2, a.1.max(b.1) as i32 + 2);
+        let c = [0.85, 0.12, 0.1];
+        let l = ((x1 - x0).min(y1 - y0) / 4).clamp(3, 8);
+        for (x, y, dx, dy) in [(x0, y0, 1, 1), (x1, y0, -1, 1), (x0, y1, 1, -1), (x1, y1, -1, -1)] {
+            let hx = if dx > 0 { x } else { x - l + 1 };
+            let vy = if dy > 0 { y } else { y - l + 1 };
+            self.raster.fill_rect(hx, y, l, 1, c, 1.0);
+            self.raster.fill_rect(x, vy, 1, l, c, 1.0);
+        }
+    }
+
     fn render_boss_bar(&mut self) {
         let Some(i) = self.boss_active() else { return };
         let e = &self.st.enemies[i];

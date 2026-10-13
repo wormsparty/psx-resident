@@ -173,9 +173,9 @@ impl Game {
                 p.head_pitch = -0.1;
                 p
             }
-            ZState::Attack => Pose::brute_slash(z.t * if z.hp * 2 < z.max_hp { 1.25 } else { 1.0 } / 1.15),
+            ZState::Attack => Pose::brute_slash(z.t * z.brute_rage() / BRUTE_SLASH_TIME),
             ZState::Charge => {
-                if z.t < 0.7 {
+                if z.t < BRUTE_WINDUP {
                     // Tête baissée, il gratte le sol.
                     let mut p = Pose::brute_run(0.0, t);
                     p.torso_pitch = 0.7;
@@ -370,6 +370,12 @@ impl Game {
             if self.st.flags[c.flag] == c.when {
                 r.draw_mesh(&c.mesh, &Mat4::IDENTITY, Some(&light));
             }
+        }
+        // Portraits de l'énigme : enfoncés dans l'ordre déjà trouvé.
+        let solved = self.st.flags[F_PORTRAITS];
+        for (id, rest, pressed) in &room.portraits {
+            let down = solved || *id < self.st.puzzle;
+            r.draw_mesh(if down { pressed } else { rest }, &Mat4::IDENTITY, Some(&light));
         }
 
         // Flaques de sang.
